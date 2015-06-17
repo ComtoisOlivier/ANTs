@@ -24,23 +24,33 @@ using namespace std;
 namespace ants
 {
 
-//Define an exception for a missing argument
-class MissingLabelPointFileException : public exception
+int ReadFromLabelTextFiles(PointSetType::Pointer *curved, PointSetType::Pointer *straight)
 {
-	virtual const char* what() const throw()
+	ofstream straightFile, curvedFile;
+	string line;
+	float
+	//fetching points from straight file
+	straightFile.open("LandmarksRealCurve.txt");
+	while(getline(straightFile, line))
 	{
-		return "Missing the straight label text file in the input arguments";
+		fixed->append
 	}
-}
 
-int ReadFromLabelTextFiles(float** curved, float** fixed)
-{
 
 }
 
 template <unsigned int ImageDimension>
 int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 {
+	//Define an exception for a missing argument
+  class MissingLabelPointFileException : public exception
+  {
+	virtual const char* what() const throw()
+	{
+		return "Missing the straight label text file in the input arguments";
+	}
+  }filex;
+
   typedef float                                 RealType;
   typedef unsigned int                          LabelType;
   typedef itk::Image<LabelType, ImageDimension> LabelImageType;
@@ -276,7 +286,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
 	  }
 	  else
-		  throw MissingLabelPointFileException e
+		  throw filex;
   }
 
   // Now match up the center points
