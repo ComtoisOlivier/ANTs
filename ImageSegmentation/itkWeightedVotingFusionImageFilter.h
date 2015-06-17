@@ -21,7 +21,6 @@
 #include "itkImageToImageFilter.h"
 
 #include "itkConstNeighborhoodIterator.h"
-#include "itkSimpleFastMutexLock.h"
 
 #include <vnl/vnl_matrix.h>
 #include <vnl/vnl_vector.h>
@@ -34,9 +33,9 @@ namespace itk
 {
 
 /** \class WeightedVotingFusionImageFilter
- * \brief Implementation of the MALF algorithm.
+ * \brief Implementation of the joint label fusion and joint intensity fusion algorithm
  *
- * \author Paul Yushkevich
+ * \author Paul Yushkevich with modifications by Brian Avants and Nick Tustison
  *
  * \par REFERENCE
  *
@@ -87,6 +86,9 @@ public:
   typedef Image<LabelType, ImageDimension>           LabelImageType;
   typedef typename LabelImageType::Pointer           LabelImagePointer;
   typedef std::vector<LabelImagePointer>             LabelImageList;
+
+  typedef LabelImageType                             MaskImageType;
+  typedef typename MaskImageType::Pointer            MaskImagePointer;
 
   typedef typename InputImageType::RegionType        RegionType;
   typedef typename InputImageType::SizeType          SizeType;
@@ -155,6 +157,17 @@ public:
       this->m_NumberOfAtlasSegmentations++;
       }
 
+    this->UpdateInputs();
+    }
+
+  /**
+   * Set mask image function.  If a binary mask image is specified, only
+   * those input image voxels corresponding with mask image values equal
+   * to one are used.
+   */
+  void SetMaskImage( MaskImageType *mask )
+    {
+    this->m_MaskImage = mask;
     this->UpdateInputs();
     }
 
@@ -322,6 +335,8 @@ private:
   InputImageSetList                                    m_AtlasImages;
   LabelImageList                                       m_AtlasSegmentations;
   LabelExclusionMap                                    m_LabelExclusionImages;
+  MaskImagePointer                                     m_MaskImage;
+  LabelType                                            m_MaskLabel;
 
   LabelSetType                                         m_LabelSet;
   SizeValueType                                        m_NumberOfAtlases;
@@ -347,8 +362,6 @@ private:
   VotingWeightImageList                                m_AtlasVotingWeightImages;
 
   InputImageList                                       m_JointIntensityFusionImage;
-
-  SimpleFastMutexLock                                  m_MutexLock;
 };
 
 } // namespace itk

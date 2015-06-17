@@ -3,9 +3,9 @@
 #include "antsAllocImage.h"
 #include "ReadWriteData.h"
 
-#include "itkWeightedVotingFusionImageFilter.h"
 #include "itkNumericSeriesFileNames.h"
 #include "itkTimeProbe.h"
+#include "itkWeightedVotingFusionImageFilter.h"
 
 #include <sstream>
 #include <string>
@@ -17,49 +17,69 @@
 namespace ants
 {
 
-// template <class TFilter>
-// class CommandIterationUpdate : public itk::Command
-// {
-// public:
-//   typedef CommandIterationUpdate  Self;
-//   typedef itk::Command            Superclass;
-//   typedef itk::SmartPointer<Self> Pointer;
-//   itkNewMacro( Self );
-// protected:
-//   CommandIterationUpdate()
-//   {
-//   };
-// public:
-//
-//   void Execute(itk::Object *caller, const itk::EventObject & event) ITK_OVERRIDE
-//   {
-//     Execute( (const itk::Object *) caller, event);
-//   }
-//
-//   void Execute(const itk::Object * object, const itk::EventObject & event) ITK_OVERRIDE
-//   {
-//     const TFilter * filter =
-//       dynamic_cast<const TFilter *>( object );
-//
-//     if( typeid( event ) != typeid( itk::IterationEvent ) )
-//       {
-//       return;
-//       }
-//     if( filter->GetElapsedIterations() == 1 )
-//       {
-//       std::cout << "Current level = " << filter->GetCurrentLevel() + 1
-//                << std::endl;
-//       }
-//     std::cout << "  Iteration " << filter->GetElapsedIterations()
-//              << " (of "
-//              << filter->GetMaximumNumberOfIterations()[filter->GetCurrentLevel()]
-//              << ").  ";
-//     std::cout << " Current convergence value = "
-//              << filter->GetCurrentConvergenceMeasurement()
-//              << " (threshold = " << filter->GetConvergenceThreshold()
-//              << ")" << std::endl;
-//   }
-// };
+template <class TFilter>
+class CommandProgressUpdate : public itk::Command
+{
+public:
+  typedef  CommandProgressUpdate                      Self;
+  typedef  itk::Command                               Superclass;
+  typedef  itk::SmartPointer<CommandProgressUpdate>  Pointer;
+  itkNewMacro( CommandProgressUpdate );
+protected:
+
+  CommandProgressUpdate() : m_CurrentProgress( 0 ) {};
+
+  typedef TFilter FilterType;
+
+  unsigned int m_CurrentProgress;
+
+public:
+
+  void Execute(itk::Object *caller, const itk::EventObject & event)
+    {
+    itk::ProcessObject *po = dynamic_cast<itk::ProcessObject *>( caller );
+    if (! po) return;
+//    std::cout << po->GetProgress() << std::endl;
+    if( typeid( event ) == typeid ( itk::ProgressEvent )  )
+      {
+      if( this->m_CurrentProgress < 99 )
+        {
+        this->m_CurrentProgress++;
+        if( this->m_CurrentProgress % 10 == 0 )
+          {
+          std::cout << this->m_CurrentProgress << std::flush;
+          }
+        else
+          {
+          std::cout << "*" << std::flush;
+          }
+        }
+      }
+    }
+
+  void Execute(const itk::Object * object, const itk::EventObject & event)
+    {
+    itk::ProcessObject *po = dynamic_cast<itk::ProcessObject *>(
+      const_cast<itk::Object *>( object ) );
+    if (! po) return;
+
+    if( typeid( event ) == typeid ( itk::ProgressEvent )  )
+      {
+      if( this->m_CurrentProgress < 99 )
+        {
+        this->m_CurrentProgress++;
+        if( this->m_CurrentProgress % 10 == 0 )
+          {
+          std::cout << this->m_CurrentProgress << std::flush;
+          }
+        else
+          {
+          std::cout << "*" << std::flush;
+          }
+        }
+      }
+    }
+};
 
 template <unsigned int ImageDimension>
 int antsJointFusion( itk::ants::CommandLineParser *parser )
@@ -67,6 +87,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
   typedef float                                               RealType;
   typedef itk::Image<RealType, ImageDimension>                ImageType;
   typedef itk::Image<unsigned int, ImageDimension>            LabelImageType;
+  typedef LabelImageType                                      MaskImageType;
 
   typedef typename itk::ants::CommandLineParser::OptionType   OptionType;
 
@@ -89,8 +110,6 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
 
   typedef itk::WeightedVotingFusionImageFilter<ImageType, LabelImageType> FusionFilterType;
   typename FusionFilterType::Pointer fusionFilter = FusionFilterType::New();
-
-  typedef typename FusionFilterType::LabelImageType            LabelImageType;
   typedef typename LabelImageType::PixelType                   LabelType;
 
 
@@ -144,7 +163,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
     }
 
   std::vector<unsigned int> patchRadius;
-  patchRadius.push_back( 3 );
+  patchRadius.push_back( 2 );
   typename OptionType::Pointer patchRadiusOption = parser->GetOption( "patch-radius" );
   if( patchRadiusOption && patchRadiusOption->GetNumberOfFunctions() )
     {
@@ -338,13 +357,35 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
       }
     }
 
+  // Get the mask
+
+  typename itk::ants::CommandLineParser::OptionType::Pointer maskImageOption =
+    parser->GetOption( "mask-image" );
+  if( maskImageOption && maskImageOption->GetNumberOfFunctions() )
+    {
+    typename MaskImageType::Pointer maskImage = ITK_NULLPTR;
+
+    std::string inputFile = maskImageOption->GetFunction( 0 )->GetName();
+    ReadImage<MaskImageType>( maskImage, inputFile.c_str() );
+
+    fusionFilter->SetMaskImage( maskImage );
+    }
+
   // Run the fusion program
+
+  itk::TimeProbe timer;
+  timer.Start();
+
+  if( verbose )
+    {
+    typedef CommandProgressUpdate<FusionFilterType> CommandType;
+    typename CommandType::Pointer observer = CommandType::New();
+    fusionFilter->AddObserver( itk::ProgressEvent(), observer );
+    }
 
   try
     {
-    std::cout << "Running antsFusion" << std::endl;
     fusionFilter->Update();
-    fusionFilter->Print( std::cout, 3 );
     }
   catch( itk::ExceptionObject & e )
     {
@@ -353,6 +394,14 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
       std::cerr << "Exception caught: " << e << std::endl;
       }
     return EXIT_FAILURE;
+    }
+
+  timer.Stop();
+
+  if( verbose )
+    {
+    std::cout << std::endl << std::endl;
+    fusionFilter->Print( std::cout, 3 );
     }
 
   // write the output
@@ -487,6 +536,11 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
         WriteImage<typename FusionFilterType::ProbabilityImageType>( fusionFilter->GetAtlasVotingWeightImage( i ), imageNames[i].c_str() );
         }
       }
+    }
+
+  if( verbose )
+    {
+    std::cout << "Elapsed time: " << timer.GetMean() << std::endl;
     }
 
   return EXIT_SUCCESS;
@@ -631,8 +685,20 @@ void InitializeCommandLineOptions( itk::ants::CommandLineParser *parser )
 
   OptionType::Pointer option = OptionType::New();
   option->SetLongName( "exclusion-image" );
-  option->SetShortName( 'x' );
+  option->SetShortName( 'e' );
   option->SetUsageOption( 0, "label[exclusionImage]" );
+  option->SetDescription( description );
+  parser->AddOption( option );
+  }
+
+  {
+  std::string description =
+    std::string( "If a mask image is specified, fusion is only performed in the mask region." );
+
+  OptionType::Pointer option = OptionType::New();
+  option->SetLongName( "mask-image" );
+  option->SetShortName( 'x' );
+  option->SetUsageOption( 0, "maskImageFilename" );
   option->SetDescription( description );
   parser->AddOption( option );
   }
@@ -652,6 +718,7 @@ void InitializeCommandLineOptions( itk::ants::CommandLineParser *parser )
   option->SetDescription( description );
   parser->AddOption( option );
   }
+
 
   {
   std::string description = std::string( "Get version information." );
@@ -746,7 +813,7 @@ private:
     std::string( "antsJointFusion is an image fusion algorithm developed by Hongzhi Wang and " )
     + std::string( "Paul Yushkevich which won segmentation challenges at MICCAI 2012 and MICCAI 2013. " )
     + std::string( "The original label fusion framework was extended to accommodate intensities by " )
-    + std::string( "Brain Avants.  This implementation is based on Paul's original ITK-style " )
+    + std::string( "Brian Avants.  This implementation is based on Paul's original ITK-style " )
     + std::string( "implementation and Brian's ANTsR implementation.  References include  1) H. Wang, " )
     + std::string( "J. W. Suh, S. Das, J. Pluta, C. Craige, P. Yushkevich, Multi-atlas " )
     + std::string( "segmentation with joint label fusion IEEE Trans. on Pattern " )
