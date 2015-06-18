@@ -335,7 +335,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
 	  }
 	  else
-		  throw std::runtime_error("Need both files in order to ");;
+		  throw filex;
   }
 
   // Now match up the center points
