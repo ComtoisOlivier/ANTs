@@ -922,6 +922,7 @@ set(AllANTSPrograms
  ANTSUseDeformationFieldToGetAffineTransform
  ANTSUseLandmarkImagesToGetAffineTransform
  ANTSUseLandmarkImagesToGetBSplineDisplacementField
+ ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField
  Atropos
  AverageAffineTransform
  AverageImages

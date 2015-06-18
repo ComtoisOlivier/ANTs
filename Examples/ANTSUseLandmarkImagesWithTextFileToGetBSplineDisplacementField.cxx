@@ -64,24 +64,25 @@ int getRealValuePointSetFromFile(typename itk::PointSet<unsigned int, ImageDimen
 	ifstream straightFile("LandmarksRealStraight.txt"), curvedFile("LandmarksRealCurve.txt");
 	string line;
 	string token;
+	std::vector<float> straightValues;
+	std::vector<float> curvedValues;
 
 	//fetching coordinates from files
 	try
 	{
-		std::vector<float> straightValues = readLabelValueFromFile(straightFile);
-		std::vector<float> curvedValues = readLabelValueFromFile(curvedFile);
+		straightValues = readLabelValueFromFile(straightFile);
+		curvedValues = readLabelValueFromFile(curvedFile);
+		//check if not empty
+		if(curvedValues.size() == 0)
+			throw std::runtime_error("No value found in the curved labels text file.");
+
+		if(straightValues.size() == 0)
+			throw std::runtime_error("No value found in straight the labels text file.");
 	}
 	catch(exception &e)
 	{
-		printf("%s \n",e.what());
+		throw e;
 	}
-
-	//check if not empty
-	if(curvedValues.size() == 0)
-		throw std::runtime_error("No value found in the curved labels text file.");
-
-	if(straightValues.size() == 0)
-		throw std::runtime_error("No value found in straight the labels text file.");
 
 	//Produce the Straight points
 	std::vector<float>::iterator it = straightValues.begin();
@@ -98,7 +99,7 @@ int getRealValuePointSetFromFile(typename itk::PointSet<unsigned int, ImageDimen
 }
 
 template <unsigned int ImageDimension>
-int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
+int LandmarkBasedWithTextDisplacementFieldTransformInitializer( int argc, char *argv[] )
 {
   typedef float                                 RealType;
   typedef unsigned int                          LabelType;
@@ -335,7 +336,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
 	  }
 	  else
-		  throw filex;
+		  throw std::runtime_error("Both arguments the straight and curved file must be specified");;
   }
 
   // Now match up the center points
@@ -562,13 +563,13 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
 // entry point for the library; parameter 'args' is equivalent to 'argv' in (argc,argv) of commandline parameters to
 // 'main()'
-int ANTSUseLandmarkImagesToGetBSplineDisplacementField( std::vector<std::string> args, std::ostream* /*out_stream = NULL */)
+int ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField( std::vector<std::string> args, std::ostream* /*out_stream = NULL */)
 {
   // put the arguments coming in as 'args' into standard (argc,argv) format;
   // 'args' doesn't have the command name as first, argument, so add it manually;
   // 'args' may have adjacent arguments concatenated into one argument,
   // which the parser should handle
-  args.insert( args.begin(), "ANTSUseLandmarkImagesToGetBSplineDisplacementField" );
+  args.insert( args.begin(), "ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField" );
   int     argc = args.size();
   char* * argv = new char *[args.size() + 1];
   for( unsigned int i = 0; i < args.size(); ++i )
@@ -643,12 +644,12 @@ private:
     {
     case 2:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<2>(argc, argv);
+    	  LandmarkBasedWithTextDisplacementFieldTransformInitializer<2>(argc, argv);
       }
       break;
     case 3:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<3>(argc, argv);
+    	  LandmarkBasedWithTextDisplacementFieldTransformInitializer<3>(argc, argv);
       }
       break;
     default:

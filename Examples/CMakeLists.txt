@@ -72,6 +72,7 @@ set(MORE_ANTS_APPS
     ResetDirection
     ANTSUseLandmarkImagesToGetAffineTransform
     ANTSUseLandmarkImagesToGetBSplineDisplacementField
+    ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField
     ANTSUseDeformationFieldToGetAffineTransform
     LaplacianThickness
     SetOrigin
