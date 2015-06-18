@@ -14,89 +14,9 @@
 
 #include <string>
 #include <vector>
-#include <iostream>
-#include <fstream>
-#include <exception>
-#include <string.h>
-#include <vector>
-
-using namespace std;
 
 namespace ants
 {
-
-std::vector<float> readLabelValueFromFile(std::ifstream &file)
-{
-	string line;
-	string token;
-	std::vector<float> result;
-	std::vector<float>::iterator it;
-
-	it = result.begin();
-	if(file.is_open())
-	{
-		while(getline(file, line))
-		{
-			char * charLine = new char[line.length() + 1];
-			strcpy(charLine, line.c_str());
-			token = std::strtok(charLine,",");
-			result.insert(it, std::atof(token.c_str()));
-			while(token.compare("") != 0)
-			{
-				token = strtok(NULL,",");
-				printf("%s \n",token.c_str());
-				result.insert(it, std::atof(token.c_str()));
-			}
-			delete [] charLine;
-		}
-
-	}
-	else
-		throw std::runtime_error("Cannot open File");
-	return result;
-
-}
-
-template <unsigned int ImageDimension>
-int getRealValuePointSetFromFile(typename itk::PointSet<unsigned int, ImageDimension>::Pointer &curved, typename itk::PointSet<unsigned int,  ImageDimension>::Pointer &straight)
-{
-	//define variables needed for this function
-	ifstream straightFile("LandmarksRealStraight.txt"), curvedFile("LandmarksRealCurve.txt");
-	string line;
-	string token;
-
-	//fetching coordinates from files
-	try
-	{
-		std::vector<float> straightValues = readLabelValueFromFile(straightFile);
-		std::vector<float> curvedValues = readLabelValueFromFile(curvedFile);
-	}
-	catch(exception &e)
-	{
-		printf("%s \n",e.what());
-	}
-
-	//check if not empty
-	if(curvedValues.size() == 0)
-		throw std::runtime_error("No value found in the curved labels text file.");
-
-	if(straightValues.size() == 0)
-		throw std::runtime_error("No value found in straight the labels text file.");
-
-	//Produce the Straight points
-	std::vector<float>::iterator it = straightValues.begin();
-	while(it != straightValues.end())
-	{
-
-	}
-	//Place points in the point set
-
-	//Read the curved file and place
-	return 0;
-
-
-}
-
 template <unsigned int ImageDimension>
 int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 {
@@ -113,7 +33,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   typename LabelImageType::DirectionType fixedDirection = fixedImage->GetDirection();
   typename LabelImageType::DirectionType fixedDirectionInverse( fixedDirection.GetInverse() );
 
-  typename LabelImageType::DirectionType identityDirection; //No clue
+  typename LabelImageType::DirectionType identityDirection;
   identityDirection.SetIdentity();
 
   const typename LabelImageType::RegionType & bufferedRegion = fixedImage->GetBufferedRegion();
@@ -153,19 +73,19 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
   unsigned int fixedCount = 0;
   for( ItF.GoToBegin(); !ItF.IsAtEnd(); ++ItF )
-  {
-    if( ItF.Get() != 0 )
     {
-      if( std::find( fixedLabels.begin(), fixedLabels.end(), ItF.Get() ) == fixedLabels.end() )
+    if( ItF.Get() != 0 )
       {
+      if( std::find( fixedLabels.begin(), fixedLabels.end(), ItF.Get() ) == fixedLabels.end() )
+        {
         fixedLabels.push_back( ItF.Get() );
-      }
+        }
       typename PointSetType::PointType fixedPoint;
       fixedImage->TransformIndexToPhysicalPoint( ItF.GetIndex(), fixedPoint );
       fixedPoints->SetPointData( fixedCount, ItF.Get() );
       fixedPoints->SetPoint( fixedCount++, fixedPoint );
+      }
     }
-  }
   std::sort( fixedLabels.begin(), fixedLabels.end() );
 
   typename PointSetType::Pointer movingPoints = PointSetType::New();
@@ -184,7 +104,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
         movingLabels.push_back( ItM.Get() );
         }
       typename PointSetType::PointType movingPoint;
-      movingImage->TransformIndexToPhysicalPoint( ItM.GetIndex(), movingPoint ); //movingpoints = points d'input transformés en coordonnées réelles
+      movingImage->TransformIndexToPhysicalPoint( ItM.GetIndex(), movingPoint );
       movingPoints->SetPointData( movingCount, ItM.Get() );
       movingPoints->SetPoint( movingCount++, movingPoint );
       }
@@ -267,8 +187,6 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
     return EXIT_FAILURE;
     }
 
-
-
   // Read in the optional label weights
 
   std::vector<float>     labelWeights;
@@ -321,22 +239,10 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
       }
     else
       {
-      std::cerr << "File " << argv[10] << " cannot be opened." << std::endl;
+      std::cerr << "File " << argv[8] << " cannot be opened." << std::endl;
       return EXIT_FAILURE;
       }
     }
-
-  //TODO : Read from real values from file
-  //Checking if both optional inputs are present
-  if (string(argv[6]).compare("") != 0)
-  {
-	  if (string(argv[7]).compare("") != 0)
-	  {
-
-	  }
-	  else
-		  throw std::runtime_error("Need both files in order to ");;
-  }
 
   // Now match up the center points
 
@@ -424,7 +330,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   bool enforceStationaryBoundary = true;
   if( argc > 7 )
     {
-    enforceStationaryBoundary = static_cast<bool>( atoi( argv[9] ) );
+    enforceStationaryBoundary = static_cast<bool>( atoi( argv[7] ) );
     }
   if( enforceStationaryBoundary )
     {
@@ -469,7 +375,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   unsigned int splineOrder = 3;
   if( argc > 6 )
     {
-    splineOrder = atoi( argv[8] );
+    splineOrder = atoi( argv[6] );
     }
 
   std::vector<unsigned int> meshSize = ConvertVector<unsigned int>( std::string( argv[4] ) );
@@ -610,7 +516,7 @@ private:
     std::cerr << "Usage:   " << argv[0]
              << " fixedImageWithLabeledLandmarks  movingImageWithLabeledLandmarks outputDisplacementField "
              <<
-      "meshSize[0]xmeshSize[1]x... numberOfLevels [] [] [order=3] [enforceStationaryBoundaries=1] [landmarkWeights]"
+      "meshSize[0]xmeshSize[1]x... numberOfLevels [order=3] [enforceStationaryBoundaries=1] [landmarkWeights]"
              << std::endl;
     std::cerr
       << " we expect the input images to be (1) N-ary  (2) in the same physical space as the images you want to "
