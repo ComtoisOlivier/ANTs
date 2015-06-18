@@ -18,6 +18,7 @@
 #include <fstream>
 #include <exception>
 #include <string>
+#include <vector>
 
 using namespace std;
 
@@ -28,12 +29,20 @@ int ReadFromLabelTextFiles(PointSetType::Pointer *curved, PointSetType::Pointer 
 {
 	ofstream straightFile, curvedFile;
 	string line;
-	float
 	//fetching points from straight file
 	straightFile.open("LandmarksRealCurve.txt");
+
+	std::vector<float> values;
+	std::vector<float>::iterator it;
+
 	while(getline(straightFile, line))
 	{
-		fixed->append
+		string delimiter = ",";
+		size_t pos = 0;
+		string token = s.substr(0, pos);
+        line.erase(0, pos + delimiter.length());
+
+		}
 	}
 
 
