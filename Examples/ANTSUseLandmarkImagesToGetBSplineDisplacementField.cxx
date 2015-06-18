@@ -549,12 +549,12 @@ private:
     {
     case 2:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<2>(argc, argv);
+    	  LandmarkBasedDisplacementFieldTransformInitializer<2>(argc, argv);
       }
       break;
     case 3:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<3>(argc, argv);
+    	  LandmarkBasedDisplacementFieldTransformInitializer<3>(argc, argv);
       }
       break;
     default:

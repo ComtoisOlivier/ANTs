@@ -19,87 +19,144 @@
 #include <exception>
 #include <string.h>
 #include <vector>
+#include <stdlib.h>
 
 using namespace std;
 
 namespace ants
 {
 
-std::vector<float> readLabelValueFromFile(std::ifstream &file)
+std::vector<float> ReadLabelValueFromFile(std::string filename)
 {
+	printf("OPENING FILE : %s", filename.c_str());
+	cin.get();
+	std::ifstream file(filename.c_str());
 	string line;
 	string token;
 	std::vector<float> result;
 	std::vector<float>::iterator it;
 
 	it = result.begin();
+	printf("\nSTARTING TO READ DATA FROM FILE\n");
 	if(file.is_open())
 	{
-		while(getline(file, line))
+		printf("\nFILE IS OPEN\n");
+		cin.get();
+		while(file.good())
 		{
+			getline(file, line);
+			printf("\nREAD");
+			printf(" %s", line.c_str());
+
 			char * charLine = new char[line.length() + 1];
 			strcpy(charLine, line.c_str());
 			token = std::strtok(charLine,",");
-			result.insert(it, std::atof(token.c_str()));
+			result.insert(it++, std::atof(token.c_str()));
 			while(token.compare("") != 0)
 			{
+				printf("\nGETTING TOKEN\n");
 				token = strtok(NULL,",");
-				printf("%s \n",token.c_str());
-				result.insert(it, std::atof(token.c_str()));
+				printf("\nTOKEN : %s \n",token.c_str());
+				printf("\nINSERTING IN RESULT VECTOR\n");
+				result.insert(it++, std::atof(token.c_str()));
 			}
 			delete [] charLine;
 		}
-
+		file.close();
 	}
 	else
+	{
+		printf("\n CANNOT OPEN FILE\n");
 		throw std::runtime_error("Cannot open File");
+	}
 	return result;
-
 }
 
 template <unsigned int ImageDimension>
-int getRealValuePointSetFromFile(typename itk::PointSet<unsigned int, ImageDimension>::Pointer &curved, typename itk::PointSet<unsigned int,  ImageDimension>::Pointer &straight)
+void GetRealValuePointSetFromFile(typename itk::PointSet<float, ImageDimension>::Pointer &curved, typename itk::PointSet<float,  ImageDimension>::Pointer &straight, string curvedFilename, string straightFilename)
 {
 	//define variables needed for this function
-	ifstream straightFile("LandmarksRealStraight.txt"), curvedFile("LandmarksRealCurve.txt");
+	printf("\nCREATING FILE NAMES\n");
+	printf("\nFILE OBJECTS CREATED\n");
 	string line;
 	string token;
+	std::vector<float> straightValues;
+	std::vector<float> curvedValues;
 
+	printf("FETCHING COORDINATE FROM FILE");
+	cin.get();
 	//fetching coordinates from files
 	try
 	{
-		std::vector<float> straightValues = readLabelValueFromFile(straightFile);
-		std::vector<float> curvedValues = readLabelValueFromFile(curvedFile);
+		straightValues = ReadLabelValueFromFile(straightFilename);
+		curvedValues = ReadLabelValueFromFile(curvedFilename);
+		//check if not empty
+		if(curvedValues.size() == 0)
+		{
+			throw std::runtime_error("No value found in the curved labels text file.");
+			printf("\nNOPE1\n");
+		}
+		if(straightValues.size() == 0)
+		{
+			throw std::runtime_error("No value found in straight the labels text file.");
+			printf("\nNOPE2\n");
+		}
+		if((straightValues.size() % 3) != 0)
+		{
+			throw std::runtime_error("The straight file size must be divisible by 3 (since there is 3 dimensions to the image)");
+			printf("\nNOPE3\n");
+		}
+		if((curvedValues.size() % 3) != 0)
+		{
+			throw std::runtime_error("The curved file size must be divisible by 3 (since there is 3 dimensions to the image)");
+			printf("\nNOPE4\n");
+		}
+		if(straightValues.size() != curvedValues.size())
+		{
+			throw std::runtime_error("Curved and Straight files do not have the same size.");
+			printf("\nNOPE5\n");
+		}
 	}
 	catch(exception &e)
 	{
-		printf("%s \n",e.what());
+		throw e;
 	}
-
-	//check if not empty
-	if(curvedValues.size() == 0)
-		throw std::runtime_error("No value found in the curved labels text file.");
-
-	if(straightValues.size() == 0)
-		throw std::runtime_error("No value found in straight the labels text file.");
 
 	//Produce the Straight points
-	std::vector<float>::iterator it = straightValues.begin();
-	while(it != straightValues.end())
+	typedef unsigned int LabelType;
+	typedef itk::PointSet<LabelType, ImageDimension> PointsFromText;
+
+	std::vector<float>::iterator itS = straightValues.begin();
+	std::vector<float>::iterator itC = curvedValues.begin();
+	unsigned int pointId = 0;
+
+	while(itS != straightValues.end())
 	{
-
+		typename PointsFromText::PointType pC;
+		typename PointsFromText::PointType pS;
+		for(int i=0; i<3; i++)
+		{
+			pS[i] = *itS;
+			pC[i] = *itC;
+			itS++;
+			itC++;
+		}
+		printf("Creating Curved Point : x : %f,	 y : %f,	z : %f \n", pC[0], pC[1], pC[2]);
+		printf("Creating Straight Point : x : %f,	 y : %f,	z : %f \n", pS[0], pS[1], pS[2]);
+		//Place points in the point set
+		curved->SetPoint(pointId, pC);
+		straight->SetPoint(pointId++, pS);
 	}
-	//Place points in the point set
-
-	//Read the curved file and place
-	return 0;
+	return;
 
 
 }
 
 template <unsigned int ImageDimension>
-int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
+int LandmarkBasedWithTextDisplacementFieldTransformInitializer( int argc, char *argv[] )
 {
+  printf("\n --------------------------------STARTING ANTSUSELANDMARKIMAGESWITHTEXTFILETOGETBSPLINEDOSPLACEMENTFIELD------------------------------------\n");
+  printf("\n %s %s %s %s %s %s %s\n", argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
   typedef float                                 RealType;
   typedef unsigned int                          LabelType;
   typedef itk::Image<LabelType, ImageDimension> LabelImageType;
@@ -108,11 +165,11 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   typename ImageReaderType::Pointer fixedReader = ImageReaderType::New();
   fixedReader->SetFileName( argv[1] );
   fixedReader->Update();
-
+  printf("\n 1\n");
   typename LabelImageType::Pointer fixedImage = fixedReader->GetOutput();
   typename LabelImageType::DirectionType fixedDirection = fixedImage->GetDirection();
   typename LabelImageType::DirectionType fixedDirectionInverse( fixedDirection.GetInverse() );
-
+  printf("\n 2\n");
   typename LabelImageType::DirectionType identityDirection; //No clue
   identityDirection.SetIdentity();
 
@@ -129,7 +186,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   importer->SetSpacing( fixedImage->GetSpacing() );
   importer->SetDirection( identityDirection );
   importer->Update();
-
+  printf("\n 3\n");
   const typename ImporterType::OutputImageType * parametricInputImage = importer->GetOutput();
 
   typename ImageReaderType::Pointer movingReader = ImageReaderType::New();
@@ -143,129 +200,129 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   typedef itk::Image<VectorType, ImageDimension> DisplacementFieldType;
 
   typedef itk::PointSet<LabelType, ImageDimension> PointSetType;
-
-  typename PointSetType::Pointer fixedPoints = PointSetType::New();
-  fixedPoints->Initialize();
-
-  std::vector<LabelType> fixedLabels;
-
+  printf("\n POINT SET \n");
+//  typename PointSetType::Pointer fixedPoints = PointSetType::New();
+//  fixedPoints->Initialize();
+//
+//  std::vector<LabelType> fixedLabels;
+//
   itk::ImageRegionIteratorWithIndex<LabelImageType> ItF( fixedImage, fixedImage->GetLargestPossibleRegion() );
-
-  unsigned int fixedCount = 0;
-  for( ItF.GoToBegin(); !ItF.IsAtEnd(); ++ItF )
-  {
-    if( ItF.Get() != 0 )
-    {
-      if( std::find( fixedLabels.begin(), fixedLabels.end(), ItF.Get() ) == fixedLabels.end() )
-      {
-        fixedLabels.push_back( ItF.Get() );
-      }
-      typename PointSetType::PointType fixedPoint;
-      fixedImage->TransformIndexToPhysicalPoint( ItF.GetIndex(), fixedPoint );
-      fixedPoints->SetPointData( fixedCount, ItF.Get() );
-      fixedPoints->SetPoint( fixedCount++, fixedPoint );
-    }
-  }
-  std::sort( fixedLabels.begin(), fixedLabels.end() );
-
-  typename PointSetType::Pointer movingPoints = PointSetType::New();
-  movingPoints->Initialize();
-
+//
+//  unsigned int fixedCount = 0;
+//  for( ItF.GoToBegin(); !ItF.IsAtEnd(); ++ItF )
+//  {
+//    if( ItF.Get() != 0 )
+//    {
+//      if( std::find( fixedLabels.begin(), fixedLabels.end(), ItF.Get() ) == fixedLabels.end() )
+//      {
+//        fixedLabels.push_back( ItF.Get() );
+//      }
+//      typename PointSetType::PointType fixedPoint;
+//      fixedImage->TransformIndexToPhysicalPoint( ItF.GetIndex(), fixedPoint );
+//      fixedPoints->SetPointData( fixedCount, ItF.Get() );
+//      fixedPoints->SetPoint( fixedCount++, fixedPoint );
+//    }
+//  }
+//  std::sort( fixedLabels.begin(), fixedLabels.end() );
+//
+//  typename PointSetType::Pointer movingPoints = PointSetType::New();
+//  movingPoints->Initialize();
+//
   std::vector<LabelType> movingLabels;
-
-  itk::ImageRegionIteratorWithIndex<LabelImageType> ItM( movingImage, movingImage->GetLargestPossibleRegion() );
-  unsigned int                                      movingCount = 0;
-  for( ItM.GoToBegin(); !ItM.IsAtEnd(); ++ItM )
-    {
-    if( ItM.Get() != 0 )
-      {
-      if( std::find( movingLabels.begin(), movingLabels.end(), ItM.Get() ) == movingLabels.end() )
-        {
-        movingLabels.push_back( ItM.Get() );
-        }
-      typename PointSetType::PointType movingPoint;
-      movingImage->TransformIndexToPhysicalPoint( ItM.GetIndex(), movingPoint ); //movingpoints = points d'input transformés en coordonnées réelles
-      movingPoints->SetPointData( movingCount, ItM.Get() );
-      movingPoints->SetPoint( movingCount++, movingPoint );
-      }
-    }
-  std::sort( movingLabels.begin(), movingLabels.end() );
-
-  // Get moving center points
-  typename PointSetType::Pointer movingCenters = PointSetType::New();
-  movingCenters->Initialize();
-  for( unsigned int n = 0; n < movingLabels.size(); n++ )
-    {
-    LabelType currentLabel = movingLabels[n];
-    typename PointSetType::PointType center;
-    center.Fill( 0 );
-    float N = 0;
-    typename PointSetType::PointsContainerConstIterator ItP =
-      movingPoints->GetPoints()->Begin();
-    typename PointSetType::PointDataContainerIterator ItD =
-      movingPoints->GetPointData()->Begin();
-    while( ItP != movingPoints->GetPoints()->End() )
-      {
-      if( ItD.Value() == currentLabel )
-        {
-        typename PointSetType::PointType point = ItP.Value();
-        for( unsigned int d = 0; d < ImageDimension; d++ )
-          {
-          center[d] += point[d];
-          }
-        N += 1.0;
-        }
-      ++ItP;
-      ++ItD;
-      }
-    for( unsigned int d = 0; d < ImageDimension; d++ )
-      {
-      center[d] /= N;
-      }
-    movingCenters->SetPoint( n, center );
-    movingCenters->SetPointData( n, currentLabel );
-    }
-
-  // Get fixed center points
-  typename PointSetType::Pointer fixedCenters = PointSetType::New();
-  fixedCenters->Initialize();
-  for( unsigned int n = 0; n < fixedLabels.size(); n++ )
-    {
-    LabelType currentLabel = fixedLabels[n];
-    typename PointSetType::PointType center;
-    center.Fill( 0 );
-    float N = 0;
-    typename PointSetType::PointsContainerConstIterator ItP =
-      fixedPoints->GetPoints()->Begin();
-    typename PointSetType::PointDataContainerIterator ItD =
-      fixedPoints->GetPointData()->Begin();
-    while( ItP != fixedPoints->GetPoints()->End() )
-      {
-      if( ItD.Value() == currentLabel )
-        {
-        typename PointSetType::PointType point = ItP.Value();
-        for( unsigned int d = 0; d < ImageDimension; d++ )
-          {
-          center[d] += point[d];
-          }
-        N += 1.0;
-        }
-      ++ItP;
-      ++ItD;
-      }
-    for( unsigned int d = 0; d < ImageDimension; d++ )
-      {
-      center[d] /= N;
-      }
-    fixedCenters->SetPoint( n, center );
-    fixedCenters->SetPointData( n, currentLabel );
-    }
-
-  if( fixedCenters->GetNumberOfPoints() != movingCenters->GetNumberOfPoints() )
-    {
-    std::cerr << "The number of fixed points and moving points must be the same." << std::endl;
-    return EXIT_FAILURE;
-    }
+//
+//  itk::ImageRegionIteratorWithIndex<LabelImageType> ItM( movingImage, movingImage->GetLargestPossibleRegion() );
+//  unsigned int                                      movingCount = 0;
+//  for( ItM.GoToBegin(); !ItM.IsAtEnd(); ++ItM )
+//    {
+//    if( ItM.Get() != 0 )
+//      {
+//      if( std::find( movingLabels.begin(), movingLabels.end(), ItM.Get() ) == movingLabels.end() )
+//        {
+//        movingLabels.push_back( ItM.Get() );
+//        }
+//      typename PointSetType::PointType movingPoint;
+//      movingImage->TransformIndexToPhysicalPoint( ItM.GetIndex(), movingPoint ); //movingpoints = points d'input transformés en coordonnées réelles
+//      movingPoints->SetPointData( movingCount, ItM.Get() );
+//      movingPoints->SetPoint( movingCount++, movingPoint );
+//      }
+//    }
+//  std::sort( movingLabels.begin(), movingLabels.end() );
+//
+//  // Get moving center points
+//  typename PointSetType::Pointer movingCenters = PointSetType::New();
+//  movingCenters->Initialize();
+//  for( unsigned int n = 0; n < movingLabels.size(); n++ )
+//    {
+//    LabelType currentLabel = movingLabels[n];
+//    typename PointSetType::PointType center;
+//    center.Fill( 0 );
+//    float N = 0;
+//    typename PointSetType::PointsContainerConstIterator ItP =
+//      movingPoints->GetPoints()->Begin();
+//    typename PointSetType::PointDataContainerIterator ItD =
+//      movingPoints->GetPointData()->Begin();
+//    while( ItP != movingPoints->GetPoints()->End() )
+//      {
+//      if( ItD.Value() == currentLabel )
+//        {
+//        typename PointSetType::PointType point = ItP.Value();
+//        for( unsigned int d = 0; d < ImageDimension; d++ )
+//          {
+//          center[d] += point[d];
+//          }
+//        N += 1.0;
+//        }
+//      ++ItP;
+//      ++ItD;
+//      }
+//    for( unsigned int d = 0; d < ImageDimension; d++ )
+//      {
+//      center[d] /= N;
+//      }
+//    movingCenters->SetPoint( n, center );
+//    movingCenters->SetPointData( n, currentLabel );
+//    }
+//
+//  // Get fixed center points
+//  typename PointSetType::Pointer fixedCenters = PointSetType::New();
+//  fixedCenters->Initialize();
+//  for( unsigned int n = 0; n < fixedLabels.size(); n++ )
+//    {
+//    LabelType currentLabel = fixedLabels[n];
+//    typename PointSetType::PointType center;
+//    center.Fill( 0 );
+//    float N = 0;
+//    typename PointSetType::PointsContainerConstIterator ItP =
+//      fixedPoints->GetPoints()->Begin();
+//    typename PointSetType::PointDataContainerIterator ItD =
+//      fixedPoints->GetPointData()->Begin();
+//    while( ItP != fixedPoints->GetPoints()->End() )
+//      {
+//      if( ItD.Value() == currentLabel )
+//        {
+//        typename PointSetType::PointType point = ItP.Value();
+//        for( unsigned int d = 0; d < ImageDimension; d++ )
+//          {
+//          center[d] += point[d];
+//          }
+//        N += 1.0;
+//        }
+//      ++ItP;
+//      ++ItD;
+//      }
+//    for( unsigned int d = 0; d < ImageDimension; d++ )
+//      {
+//      center[d] /= N;
+//      }
+//    fixedCenters->SetPoint( n, center );
+//    fixedCenters->SetPointData( n, currentLabel );
+//    }
+//
+//  if( fixedCenters->GetNumberOfPoints() != movingCenters->GetNumberOfPoints() )
+//    {
+//    std::cerr << "The number of fixed points and moving points must be the same." << std::endl;
+//    return EXIT_FAILURE;
+//    }
 
 
 
@@ -277,11 +334,11 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   bool useWeights = false;
 
   unsigned int labelCount = 0;
-  if( argc > 8 )
+  if( argc > 10 )
     {
     useWeights = true;
 
-    std::fstream labelStr( argv[8] );
+    std::fstream labelStr( argv[10] );
 
     if( labelStr.is_open() )
       {
@@ -326,17 +383,37 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
       }
     }
 
-  //TODO : Read from real values from file
+  //initialize points container
+  typedef itk::PointSet<RealType, ImageDimension> RealPointSetType;
+  typename RealPointSetType::Pointer fixedPts = RealPointSetType::New();
+  typename RealPointSetType::Pointer movingPts = RealPointSetType::New();
+
+  fixedPts->Initialize();
+  movingPts->Initialize();
+
   //Checking if both optional inputs are present
+  printf("\n GETTING FILE INFO\n");
   if (string(argv[6]).compare("") != 0)
   {
 	  if (string(argv[7]).compare("") != 0)
 	  {
-
+		  try
+		  {
+			  printf("\n STARTING FILE INFO FETCHING METHOD\n");
+			  string straightFilename = argv[7];
+			  string curvedFilename = argv[6];
+			  GetRealValuePointSetFromFile<3>(movingPts, fixedPts, curvedFilename, straightFilename);
+		  }
+		  catch(exception &e)
+		  {
+			  throw e;
+		  }
 	  }
 	  else
-		  throw filex;
+		  throw std::runtime_error("Both arguments the straight and curved file must be specified");
   }
+  else
+	  throw std::runtime_error("A file must be specified in order to take input real labels.");
 
   // Now match up the center points
 
@@ -354,21 +431,22 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
   fieldPoints->Initialize();
   unsigned long count = 0;
 
-  typename PointSetType::PointsContainerConstIterator mIt =
-    movingCenters->GetPoints()->Begin();
-  typename PointSetType::PointDataContainerIterator mItD =
-    movingCenters->GetPointData()->Begin();
+  typename RealPointSetType::PointsContainerConstIterator mIt =
+	movingPts->GetPoints()->Begin();
+  typename RealPointSetType::PointDataContainerIterator mItD =
+    movingPts->GetPointData()->Begin();
 
-  while( mItD != movingCenters->GetPointData()->End() )
+  while( mIt != movingPts->GetPoints()->End() )
     {
-    typename PointSetType::PointsContainerConstIterator fIt =
-      fixedCenters->GetPoints()->Begin();
-    typename PointSetType::PointDataContainerIterator fItD =
-      fixedCenters->GetPointData()->Begin();
+    typename RealPointSetType::PointsContainerConstIterator fIt =
+      fixedPts->GetPoints()->Begin();
+    typename RealPointSetType::PointDataContainerIterator fItD =
+      fixedPts->GetPointData()->Begin();
 
-    while( fItD != fixedCenters->GetPointData()->End() )
+    while( fIt != fixedPts->GetPoints()->End() )
       {
-      if( fItD.Value() == mItD.Value() )
+    	//printf();
+      if( true || fItD.Value() == mItD.Value() )
         {
         typename PointSetType::PointType fpoint = fIt.Value();
         typename PointSetType::PointType mpoint = mIt.Value();
@@ -513,22 +591,22 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
   std::cout << "Distance errors:" << std::endl;
 
-  mIt = movingCenters->GetPoints()->Begin();
-  mItD = movingCenters->GetPointData()->Begin();
+  mIt = movingPts->GetPoints()->Begin();
+  mItD = movingPts->GetPointData()->Begin();
 
-  while( mItD != movingCenters->GetPointData()->End() )
+  while( mIt != movingPts->GetPoints()->End() )
     {
-    typename PointSetType::PointsContainerConstIterator fIt =
-      fixedCenters->GetPoints()->Begin();
-    typename PointSetType::PointDataContainerIterator fItD =
-      fixedCenters->GetPointData()->Begin();
+    typename RealPointSetType::PointsContainerConstIterator fIt =
+      fixedPts->GetPoints()->Begin();
+    typename RealPointSetType::PointDataContainerIterator fItD =
+    		fixedPts->GetPointData()->Begin();
 
-    while( fItD != fixedCenters->GetPointData()->End() )
+    while( fIt != fixedPts->GetPoints()->End() )
       {
-      if( fItD.Value() == mItD.Value() )
+      if( true || fItD.Value() == mItD.Value() )
         {
-        typename PointSetType::PointType fpoint = fIt.Value();
-        typename PointSetType::PointType mpoint = mIt.Value();
+        typename RealPointSetType::PointType fpoint = fIt.Value();
+        typename RealPointSetType::PointType mpoint = mIt.Value();
 
         VectorType displacement = ( mpoint - fpoint );
 
@@ -562,13 +640,13 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
 
 // entry point for the library; parameter 'args' is equivalent to 'argv' in (argc,argv) of commandline parameters to
 // 'main()'
-int ANTSUseLandmarkImagesToGetBSplineDisplacementField( std::vector<std::string> args, std::ostream* /*out_stream = NULL */)
+int ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField( std::vector<std::string> args, std::ostream* /*out_stream = NULL */)
 {
   // put the arguments coming in as 'args' into standard (argc,argv) format;
   // 'args' doesn't have the command name as first, argument, so add it manually;
   // 'args' may have adjacent arguments concatenated into one argument,
   // which the parser should handle
-  args.insert( args.begin(), "ANTSUseLandmarkImagesToGetBSplineDisplacementField" );
+  args.insert( args.begin(), "ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField" );
   int     argc = args.size();
   char* * argv = new char *[args.size() + 1];
   for( unsigned int i = 0; i < args.size(); ++i )
@@ -610,7 +688,7 @@ private:
     std::cerr << "Usage:   " << argv[0]
              << " fixedImageWithLabeledLandmarks  movingImageWithLabeledLandmarks outputDisplacementField "
              <<
-      "meshSize[0]xmeshSize[1]x... numberOfLevels [] [] [order=3] [enforceStationaryBoundaries=1] [landmarkWeights]"
+      "meshSize[0]xmeshSize[1]x... numberOfLevels movingLabelsFilename fixedLabelsFilename [order=3] [enforceStationaryBoundaries=1] [landmarkWeights]"
              << std::endl;
     std::cerr
       << " we expect the input images to be (1) N-ary  (2) in the same physical space as the images you want to "
@@ -643,12 +721,13 @@ private:
     {
     case 2:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<2>(argc, argv);
+    	  //LandmarkBasedWithTextDisplacementFieldTransformInitializer<2>(argc, argv);
+    	  throw std::runtime_error("This function only takes 3D images");
       }
       break;
     case 3:
       {
-      LandmarkBasedDisplacementFieldTransformInitializer<3>(argc, argv);
+    	  LandmarkBasedWithTextDisplacementFieldTransformInitializer<3>(argc, argv);
       }
       break;
     default:
