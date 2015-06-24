@@ -52,7 +52,7 @@ std::vector<float> ReadLabelValueFromFile(std::string filename) {
 	}
 	else
 	{
-		throw std::runtime_error("Cannot open File");
+		throw std::runtime_error(std::string("Cannot open file : ")+filename);
 	}
 	return result;
 }
@@ -73,25 +73,30 @@ void GetRealValuePointSetFromFile(typename itk::PointSet<float, ImageDimension>:
 		if (curvedValues.size() == 0) {
 			throw std::runtime_error(
 					"No value found in the curved labels text file.");
+			printf("NOPE1");
 		}
 		if (straightValues.size() == 0) {
 			throw std::runtime_error(
 					"No value found in straight the labels text file.");
+			printf("NOPE1");
 		}
 		if ((straightValues.size() % 3) != 0) {
 			throw std::runtime_error(
 					"The straight file size must be divisible by 3 (since there is 3 dimensions to the image)");
+			printf("NOPE1");
 		}
 		if ((curvedValues.size() % 3) != 0) {
 			throw std::runtime_error(
 					"The curved file size must be divisible by 3 (since there is 3 dimensions to the image)");
+			printf("NOPE1");
 		}
 		if (straightValues.size() != curvedValues.size()) {
 			throw std::runtime_error(
 					"Curved and Straight files do not have the same size.");
+			printf("NOPE1");
 		}
-	} catch (exception &e) {
-		throw e;
+	} catch (const std::exception &e) {
+		throw;
 	}
 
 	//Produce the Straight points
@@ -352,7 +357,7 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 				GetRealValuePointSetFromFile<3>(movingPts, fixedPts,
 						curvedFilename, straightFilename);
 			} catch (exception &e) {
-				throw e;
+				throw;
 			}
 		} else
 			throw std::runtime_error(
@@ -682,8 +687,8 @@ int ANTSUseLandmarkImagesWithTextFileToGetBSplineDisplacementField(
 		try {
 			LandmarkBasedWithTextDisplacementFieldTransformInitializer<3>(argc,
 					argv);
-		} catch (exception &e) {
-			printf(e.what());
+		} catch (const std::exception &e) {
+			std::cerr << e.what() << std::endl;
 		}
 	}
 		break;
