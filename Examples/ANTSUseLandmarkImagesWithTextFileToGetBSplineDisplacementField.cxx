@@ -437,7 +437,7 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 				printf("\nEXECUTING THE TRANSFORM\n");
 				printf("\nINDEX : x : %f,   y : %f,   z : %f\n",fixedCidx[0], fixedCidx[1], fixedCidx[2]);
 //				cin.get();
-				parametricInputImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fieldPoint);
+				fixedImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fieldPoint);
 				printf("\nFIELD POINT : x : %f,   y : %f,   z : %f\n",fieldPoint[0], fieldPoint[1], fieldPoint[2]);
 				fieldPoints->SetPoint(count, fieldPoint);
 				fieldPoints->SetPointData(count, vector);
