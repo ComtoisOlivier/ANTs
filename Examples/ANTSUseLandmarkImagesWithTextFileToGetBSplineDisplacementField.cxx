@@ -73,27 +73,22 @@ void GetRealValuePointSetFromFile(typename itk::PointSet<float, ImageDimension>:
 		if (curvedValues.size() == 0) {
 			throw std::runtime_error(
 					"No value found in the curved labels text file.");
-			printf("NOPE1");
 		}
 		if (straightValues.size() == 0) {
 			throw std::runtime_error(
 					"No value found in straight the labels text file.");
-			printf("NOPE1");
 		}
 		if ((straightValues.size() % 3) != 0) {
 			throw std::runtime_error(
 					"The straight file size must be divisible by 3 (since there is 3 dimensions to the image)");
-			printf("NOPE1");
 		}
 		if ((curvedValues.size() % 3) != 0) {
 			throw std::runtime_error(
 					"The curved file size must be divisible by 3 (since there is 3 dimensions to the image)");
-			printf("NOPE1");
 		}
 		if (straightValues.size() != curvedValues.size()) {
 			throw std::runtime_error(
 					"Curved and Straight files do not have the same size.");
-			printf("NOPE1");
 		}
 	} catch (const std::exception &e) {
 		throw;
@@ -116,15 +111,10 @@ void GetRealValuePointSetFromFile(typename itk::PointSet<float, ImageDimension>:
 			itS++;
 			itC++;
 		}
-		printf("Creating Curved Point : x : %f,   y : %f,   z : %f \n", pC[0],
-				pC[1], pC[2]);
-		printf("Creating Straight Point : x : %f,   y : %f,   z : %f \n", pS[0],
-				pS[1], pS[2]);
 		//Place points in the point set
 		curved->SetPoint(pointId, pC);
 		straight->SetPoint(pointId++, pS);
 	}
-	printf("\nSetPoints Created\n");
 	return;
 
 }
@@ -172,7 +162,6 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	typedef itk::Image<VectorType, ImageDimension> DisplacementFieldType;
 
 	typedef itk::PointSet<LabelType, ImageDimension> PointSetType;
-	printf("\n POINT SET \n");
 	typename PointSetType::Pointer fixedPoints = PointSetType::New();
 	fixedPoints->Initialize();
 
@@ -193,8 +182,6 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 					fixedPoint);
 			fixedPoints->SetPointData(fixedCount, ItF.Get());
 			fixedPoints->SetPoint(fixedCount++, fixedPoint);
-			printf("\n%f, %f, %f\n", fixedPoint[0], fixedPoint[1],
-					fixedPoint[2]);
 		}
 	}
 	std::sort(fixedLabels.begin(), fixedLabels.end());
@@ -347,11 +334,9 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	movingPts->Initialize();
 
 	//Checking if both optional inputs are present
-	printf("\n GETTING FILE INFO\n");
 	if (string(argv[6]).compare("") != 0) {
 		if (string(argv[7]).compare("") != 0) {
 			try {
-				printf("\n STARTING FILE INFO FETCHING METHOD\n");
 				string straightFilename = argv[7];
 				string curvedFilename = argv[6];
 				GetRealValuePointSetFromFile<3>(movingPts, fixedPts,
@@ -365,9 +350,6 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	} else
 		throw std::runtime_error(
 				"A file must be specified in order to take input real labels.");
-
-	printf("\nCREATED REAL POINTS\n");
-	cin.get();
 	// Now match up the center points
 
 	typedef itk::PointSet<VectorType, ImageDimension> DisplacementFieldPointSetType;
@@ -399,27 +381,11 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	realFixedPts->Initialize();
 	realMovingPts->Initialize();
 
-
-//	while (mIt != movingPts->GetPoints()->End()) {
-//		typename RealPhysicalPoints::PointType pP;
-//		parametricInputImage->TransformContinuousIndexToPhysicalPoint(mIt.Value(), pP);
-//		realMovingPts->SetPoint(pointId++, pP);
 //	}
-//	mIt = movingPts->GetPoints()->Begin();
-//
-//	pointId = 0;
-//	while (fIt != fixedPts->GetPoints()->End()) {
-//		typename RealPhysicalPoints::PointType pP;
-//		parametricInputImage->TransformContinuousIndexToPhysicalPoint(fIt.Value(), pP);
-//		realFixedPts->SetPoint(pointId++, pP);
-//	}
-	printf("\nSTARTING TRANSFORM TO PHYSICAL POINT\n");
-	cin.get();
 	while (mItD != movingCenters->GetPointData()->End()) {
 		fIt = fixedPts->GetPoints()->Begin();
 		fItD = fixedCenters->GetPointData()->Begin();
 		while (fItD != fixedCenters->GetPointData()->End()) {
-			//printf();
 			if (fItD.Value() == mItD.Value()) {
 				typename RealPointSetType::PointType fpoint = fIt.Value();
 				typename RealPointSetType::PointType mpoint = mIt.Value();
@@ -427,6 +393,7 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 				VectorType vector;
 
 				typename LabelImageType::PointType indexPoint;
+				typename DisplacementFieldType::PointType fixedPhysicalPoint;
 				typename DisplacementFieldType::PointType fieldPoint;
 				itk::ContinuousIndex<double, ImageDimension> fixedCidx;
 				for (unsigned int i = 0; i < ImageDimension; i++) {
@@ -434,11 +401,13 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 					vector[i] = mpoint[i] - fpoint[i];
 					fixedCidx[i] = indexPoint[i];
 				}
-				printf("\nEXECUTING THE TRANSFORM\n");
-				printf("\nINDEX : x : %f,   y : %f,   z : %f\n",fixedCidx[0], fixedCidx[1], fixedCidx[2]);
-//				cin.get();
+
+				fixedImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fixedPhysicalPoint);
+
+				fixedImage->TransformPhysicalPointToContinuousIndex( fixedPhysicalPoint, fixedCidx );
+
 				parametricInputImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fieldPoint);
-				printf("\nFIELD POINT : x : %f,   y : %f,   z : %f\n",fieldPoint[0], fieldPoint[1], fieldPoint[2]);
+
 				fieldPoints->SetPoint(count, fieldPoint);
 				fieldPoints->SetPointData(count, vector);
 
@@ -469,7 +438,7 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	}
 
 	bool enforceStationaryBoundary = true;
-	if (argc > 7) {
+	if (argc > 9) {
 		enforceStationaryBoundary = static_cast<bool>(atoi(argv[9]));
 	}
 	if (enforceStationaryBoundary) {
@@ -482,10 +451,8 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 
 			bool isOnStationaryBoundary = false;
 			for (unsigned int d = 0; d < ImageDimension; d++) {
-				if (index[d] == startIndex2[d]
-						|| index[d]
-								== startIndex2[d]
-										+ static_cast<int>(inputSize2[d]) - 1) {
+				if (index[d] == startIndex2[d] || index[d] == startIndex2[d] + static_cast<int>(inputSize2[d]) - 1)
+				{
 					isOnStationaryBoundary = true;
 					break;
 				}
@@ -502,13 +469,12 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 
 				fieldPoints->SetPoint(count, fixedPoint);
 				fieldPoints->SetPointData(count, vector);
-				weights->InsertElement(count, boundaryWeight);
+				if(useWeights)
+					weights->InsertElement(count, boundaryWeight);
 				count++;
 			}
 		}
 	}
-	printf("\nDOING BSPLINE TRANSFORM\n");
-	cin.get();
 	typename BSplineFilterType::Pointer bspliner = BSplineFilterType::New();
 
 	unsigned int numberOfLevels = atoi(argv[5]);
@@ -532,10 +498,9 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	} else {
 		std::cerr << "Invalid meshSize format." << std::endl;
 	}
-
 //   std::cout << ncps << std::endl;
 //
-//   bspliner->DebugOn();
+//    bspliner->DebugOn();
 	bspliner->SetOrigin(fixedImage->GetOrigin());
 	bspliner->SetSpacing(fixedImage->GetSpacing());
 	bspliner->SetSize(fixedImage->GetLargestPossibleRegion().GetSize());

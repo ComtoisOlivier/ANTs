@@ -294,6 +294,8 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
         typename DisplacementFieldType::PointType fieldPoint;
         parametricInputImage->TransformContinuousIndexToPhysicalPoint( fixedCidx, fieldPoint );
 
+        printf("\nFIELD POINT : x : %f,   y : %f,   z : %f\n",fieldPoint[0], fieldPoint[1], fieldPoint[2]);
+
         fieldPoints->SetPoint( count, fieldPoint );
         fieldPoints->SetPointData( count, vector );
 
