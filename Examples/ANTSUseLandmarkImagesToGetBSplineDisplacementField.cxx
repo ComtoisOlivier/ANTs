@@ -14,6 +14,7 @@
 
 #include <string>
 #include <vector>
+#include <exception>
 
 namespace ants
 {
@@ -294,7 +295,7 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
         typename DisplacementFieldType::PointType fieldPoint;
         parametricInputImage->TransformContinuousIndexToPhysicalPoint( fixedCidx, fieldPoint );
 
-        printf("\nFIELD POINT : x : %f,   y : %f,   z : %f\n",fieldPoint[0], fieldPoint[1], fieldPoint[2]);
+        printf("\nFIELD POINT : x : %f,   y : %f,   z : %f",fieldPoint[0], fieldPoint[1], fieldPoint[2]);
 
         fieldPoints->SetPoint( count, fieldPoint );
         fieldPoints->SetPointData( count, vector );
@@ -438,14 +439,27 @@ int LandmarkBasedDisplacementFieldTransformInitializer( int argc, char *argv[] )
         typename PointSetType::PointType fpoint = fIt.Value();
         typename PointSetType::PointType mpoint = mIt.Value();
 
+		printf("\nMPOINT : x = %f   y = %f   z = %f\n", mpoint[0], mpoint[1], mpoint[2]);
+		printf("\nFPOINT : x = %f   y = %f   z = %f\n", fpoint[0], fpoint[1], fpoint[2]);
+
         VectorType displacement = ( mpoint - fpoint );
+        printf("Displacement : %f, %f, %f", displacement[0], displacement[1], displacement[2]);
 
         typename InterpolatorType::PointType point;
         for( unsigned int i = 0; i < ImageDimension; i++ )
           {
           point[i] = fpoint[i];
           }
-        VectorType vector = interpolator->Evaluate( point );
+        printf("\nEvaluating point : x = %f   y = %f   z = %f\n", point[0], point[1], point[2]);
+        VectorType vector;
+        if(interpolator->IsInsideBuffer(point))
+        {
+        	vector = interpolator->Evaluate( point );
+        }
+		else
+		{
+			throw std::runtime_error("Point is not inside image bounds");
+		}
 
         RealType error = ( vector - displacement ).GetNorm();
         std::cout << "  " << fItD.Value() << ": " << error << std::endl;

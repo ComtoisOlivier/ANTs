@@ -11,6 +11,7 @@
 #include "itkImportImageFilter.h"
 #include "itkVectorLinearInterpolateImageFunction.h"
 #include "itkPointSet.h"
+#include <itkImageFunction.h>
 
 #include <string>
 #include <vector>
@@ -111,10 +112,13 @@ void GetRealValuePointSetFromFile(typename itk::PointSet<float, ImageDimension>:
 			itS++;
 			itC++;
 		}
-		//Place points in the point set
+		//Place points in the point sets
 		curved->SetPoint(pointId, pC);
-		straight->SetPoint(pointId++, pS);
+		curved->SetPointData(pointId, pointId);
+		straight->SetPoint(pointId, pS);
+		straight->SetPointData(pointId, pointId++);
 	}
+	printf("RETURNING POINT VALUES");
 	return;
 
 }
@@ -367,10 +371,10 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 
 	typename RealPointSetType::PointsContainerConstIterator mIt = movingPts->GetPoints()->Begin();
 //	typename PointSetType::PointsContainerConstIterator mItI = movingCenters->GetPoints()->Begin();
-	typename PointSetType::PointDataContainerIterator mItD = movingCenters->GetPointData()->Begin();
+	typename RealPointSetType::PointDataContainerIterator mItD = movingPts->GetPointData()->Begin();
 	typename RealPointSetType::PointsContainerConstIterator fIt = fixedPts->GetPoints()->Begin();
 //	typename PointSetType::PointsContainerConstIterator fItI = fixedCenters->GetPoints()->Begin();
-	typename PointSetType::PointDataContainerIterator fItD = fixedCenters->GetPointData()->Begin();
+	typename RealPointSetType::PointDataContainerIterator fItD = fixedPts->GetPointData()->Begin();
 
 	//transform points to physcial index
 	typedef itk::PointSet<RealType, ImageDimension> RealPhysicalPoints;
@@ -382,10 +386,10 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	realMovingPts->Initialize();
 
 //	}
-	while (mItD != movingCenters->GetPointData()->End()) {
+	while (mItD != movingPts->GetPointData()->End()) {
 		fIt = fixedPts->GetPoints()->Begin();
-		fItD = fixedCenters->GetPointData()->Begin();
-		while (fItD != fixedCenters->GetPointData()->End()) {
+		fItD = fixedPts->GetPointData()->Begin();
+		while (fItD != fixedPts->GetPointData()->End()) {
 			if (fItD.Value() == mItD.Value()) {
 				typename RealPointSetType::PointType fpoint = fIt.Value();
 				typename RealPointSetType::PointType mpoint = mIt.Value();
@@ -394,19 +398,31 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 
 				typename LabelImageType::PointType indexPoint;
 				typename DisplacementFieldType::PointType fixedPhysicalPoint;
+				typename DisplacementFieldType::PointType movingPhysicalPoint;
 				typename DisplacementFieldType::PointType fieldPoint;
 				itk::ContinuousIndex<double, ImageDimension> fixedCidx;
+				itk::ContinuousIndex<double, ImageDimension> movingCidx;
 				for (unsigned int i = 0; i < ImageDimension; i++) {
-					indexPoint[i] = fpoint[i];
-					vector[i] = mpoint[i] - fpoint[i];
-					fixedCidx[i] = indexPoint[i];
+					fixedCidx[i] = fpoint[i];
+					movingCidx[i] = mpoint[i];
+					//vector[i] = mpoint[i] - fpoint[i];
+					//fixedCidx[i] = indexPoint[i];
 				}
 
 				fixedImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fixedPhysicalPoint);
+				movingImage->TransformContinuousIndexToPhysicalPoint(movingCidx, movingPhysicalPoint);
+
+				for (unsigned int i = 0; i < ImageDimension; i++) {
+
+					vector[i] = movingPhysicalPoint[i] - fixedPhysicalPoint[i];
+
+				}
 
 				fixedImage->TransformPhysicalPointToContinuousIndex( fixedPhysicalPoint, fixedCidx );
 
 				parametricInputImage->TransformContinuousIndexToPhysicalPoint(fixedCidx, fieldPoint);
+
+				printf("\nFIELD POINT : x = %f   y = %f   z = %f", fieldPoint[0], fieldPoint[1], fieldPoint[2]);
 
 				fieldPoints->SetPoint(count, fieldPoint);
 				fieldPoints->SetPointData(count, vector);
@@ -518,28 +534,58 @@ int LandmarkBasedWithTextDisplacementFieldTransformInitializer(int argc, char *a
 	typename InterpolatorType::Pointer interpolator = InterpolatorType::New();
 	interpolator->SetInputImage(bspliner->GetOutput());
 
-	std::cout << "Distance errors:" << std::endl;
+	std::cout << std::endl << "Distance errors:" << std::endl;
 
 	mIt = movingPts->GetPoints()->Begin();
-	mItD = movingCenters->GetPointData()->Begin();
+	mItD = movingPts->GetPointData()->Begin();
 
-	while (mIt != movingPts->GetPoints()->End()) {
-		fIt = fixedPts->GetPoints()->Begin();
-		fItD = fixedPoints->GetPointData()->Begin();
+	while (mItD != movingPts->GetPointData()->End())
+	{
+	    fIt = fixedPts->GetPoints()->Begin();
+	    fItD = fixedPts->GetPointData()->Begin();
 
-		while (fIt != fixedPts->GetPoints()->End()) {
-			if (true || fItD.Value() == mItD.Value()) {
-				typename RealPointSetType::PointType fpoint = fIt.Value();
-				typename RealPointSetType::PointType mpoint = mIt.Value();
+		while (fItD != fixedPts->GetPointData()->End())
+		{
+			if (fItD.Value() == mItD.Value())
+			{
+				itk::ContinuousIndex<double, ImageDimension> fpointIdx;
+				itk::ContinuousIndex<double, ImageDimension> mpointIdx;
+				typename DisplacementFieldType::PointType fpoint;
+				typename DisplacementFieldType::PointType mpoint;
+				typename RealPointSetType::PointType nonPhysicalFPoint = fIt.Value();
+				typename RealPointSetType::PointType nonPhysicalMPoint = mIt.Value();
+
+				for (unsigned int i = 0; i < ImageDimension; i++)
+				{
+					fpointIdx[i] = nonPhysicalFPoint[i];
+					mpointIdx[i] = nonPhysicalMPoint[i];
+				}
+
+				fixedImage->TransformContinuousIndexToPhysicalPoint(fpointIdx, fpoint);
+				movingImage->TransformContinuousIndexToPhysicalPoint(mpointIdx, mpoint);
+
+				printf("\nMPOINT : x = %f   y = %f   z = %f\n", mpoint[0], mpoint[1], mpoint[2]);
+				printf("\nFPOINT : x = %f   y = %f   z = %f\n", fpoint[0], fpoint[1], fpoint[2]);
 
 				VectorType displacement = (mpoint - fpoint);
+				printf("\nDisplacement : %f, %f, %f\n", displacement[0], displacement[1], displacement[2]);
 
 				typename InterpolatorType::PointType point;
 				for (unsigned int i = 0; i < ImageDimension; i++) {
 					point[i] = fpoint[i];
 				}
-				VectorType vector = interpolator->Evaluate(point);
-
+				printf("\nEvaluating point :: x = %f   y = %f   z = %f\n", point[0], point[1], point[2]);
+				//VectorType vector = interpolator->Evaluate(point);
+				VectorType vector;
+				if(interpolator->IsInsideBuffer(point))
+				{
+					vector = interpolator->Evaluate(point);
+				}
+				else
+				{
+					throw std::runtime_error("Point is not inside image bounds");
+				}
+				printf("\nCALCULATING ERROR\n");
 				RealType error = (vector - displacement).GetNorm();
 				std::cout << "  " << fItD.Value() << ": " << error << std::endl;
 
