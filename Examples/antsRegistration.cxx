@@ -473,6 +473,16 @@ static void antsRegistrationInitializeCommandLineOptions( itk::ants::CommandLine
   }
 
   {
+  std::string description = std::string( "Use MINC file formats for transformations." );
+
+  OptionType::Pointer option = OptionType::New();
+  option->SetLongName( "minc" );
+  option->SetDescription( description );
+  option->AddFunction( std::string( "0" ) );
+  parser->AddOption( option );
+  }
+
+  {
   std::string description = std::string( "Verbose output." );
 
   OptionType::Pointer option = OptionType::New();
@@ -560,9 +570,9 @@ private:
     std::string commandDescription = std::string( "This program is a user-level " )
       + std::string( "registration application meant to utilize ITKv4-only classes. The user can specify " )
       + std::string( "any number of \"stages\" where a stage consists of a transform; an image metric; " )
-      + std::string( "and iterations, shrink factors, and smoothing sigmas for each level." )
-      + std::string( "Note that dimensionality, metric, transform, output, convergence, shrink-factors ")
-      + std::string( "and smoothing-sigmas parameters are mandatory." );
+      + std::string( "and iterations, shrink factors, and smoothing sigmas for each level.  " )
+      + std::string( "Note that explicitly setting the dimensionality, metric, transform, output, " )
+      + std::string( "convergence, shrink-factors, and smoothing-sigmas parameters is mandatory." );
 
     parser->SetCommandDescription( commandDescription );
     antsRegistrationInitializeCommandLineOptions( parser );

@@ -87,6 +87,8 @@ public:
   typedef typename LabelImageType::Pointer           LabelImagePointer;
   typedef std::vector<LabelImagePointer>             LabelImageList;
 
+  typedef Image<unsigned int, ImageDimension>        CountImageType;
+
   typedef LabelImageType                             MaskImageType;
   typedef typename MaskImageType::Pointer            MaskImagePointer;
 
@@ -113,21 +115,19 @@ public:
   typedef typename ConstNeighborhoodIteratorType::OffsetType      NeighborhoodOffsetType;
 
   /**
+   * Neighborhood patch similarity metric enumerated type
+   */
+  enum SimilarityMetricType {
+    PEARSON_CORRELATION,
+    MEAN_SQUARES
+  };
+
+  /**
    * Set the multimodal target image
    */
   void SetTargetImage( InputImageList imageList )
     {
     this->m_TargetImage = imageList;
-
-    if( this->m_NumberOfModalities == 0 )
-      {
-      itkDebugMacro( "Setting the number of modalities to " << this->m_NumberOfModalities << "." );
-      this->m_NumberOfModalities = imageList.size();
-      }
-    else if( this->m_NumberOfModalities != imageList.size() )
-      {
-      itkExceptionMacro( "The number of target multimodal images is not equal to " <<  this->m_NumberOfModalities );
-      }
     this->UpdateInputs();
     }
 
@@ -140,14 +140,14 @@ public:
       {
       this->m_AtlasImages.push_back( imageList );
       }
-    if( this->m_NumberOfModalities == 0 )
+    if( this->m_NumberOfAtlasModalities == 0 )
       {
-      itkDebugMacro( "Setting the number of modalities to " << this->m_NumberOfModalities );
-      this->m_NumberOfModalities = imageList.size();
+      itkDebugMacro( "Setting the number of modalities to " << this->m_NumberOfAtlasModalities );
+      this->m_NumberOfAtlasModalities = imageList.size();
       }
-    else if( this->m_NumberOfModalities != imageList.size() )
+    else if( this->m_NumberOfAtlasModalities != imageList.size() )
       {
-      itkExceptionMacro( "The number of atlas multimodal images is not equal to " <<  this->m_NumberOfModalities );
+      itkExceptionMacro( "The number of atlas multimodal images is not equal to " <<  this->m_NumberOfAtlasModalities );
       }
     this->m_NumberOfAtlases++;
 
@@ -184,7 +184,7 @@ public:
    * Get the number of modalities used in determining the optimal label fusion
    * or optimal fused image.
    */
-  itkGetConstMacro( NumberOfModalities, unsigned int );
+  itkGetConstMacro( NumberOfAtlasModalities, unsigned int );
 
   /**
    * Get the label set.
@@ -240,6 +240,21 @@ public:
    */
   itkSetMacro( RetainAtlasVotingWeightImages, bool );
   itkGetConstMacro( RetainAtlasVotingWeightImages, bool );
+  itkBooleanMacro( RetainAtlasVotingWeightImages );
+
+  /**
+   * Boolean for constraining the weights to be positive and sum to 1.  We use
+   * the vnl function vnl_solve_qp_non_neg_sum_one to do this.
+   */
+  itkSetMacro( ConstrainSolutionToNonnegativeWeights, bool );
+  itkGetConstMacro( ConstrainSolutionToNonnegativeWeights, bool );
+  itkBooleanMacro( ConstrainSolutionToNonnegativeWeights );
+
+  /**
+   * Measurement of neighborhood similarity.
+   */
+  itkSetMacro( SimilarityMetric, SimilarityMetricType );
+  itkGetConstMacro( SimilarityMetric, SimilarityMetricType );
 
   /**
    * Get the posterior probability image corresponding to a label.
@@ -294,7 +309,7 @@ public:
    */
   const ProbabilityImagePointer GetJointIntensityFusionImage( unsigned int n )
     {
-    if( n < this->m_NumberOfModalities )
+    if( n < this->m_NumberOfAtlasModalities )
       {
       return this->m_JointIntensityFusionImage[n];
       }
@@ -318,9 +333,15 @@ protected:
 
   void AfterThreadedGenerateData() ITK_OVERRIDE;
 
+  void GenerateData() ITK_OVERRIDE;
+
 private:
 
-  RealType ComputePatchSimilarity( const InputImagePixelVectorType &, const InputImagePixelVectorType & );
+  void ThreadedGenerateDataForWeightedAveraging( const RegionType &, ThreadIdType );
+
+  void ThreadedGenerateDataForReconstruction( const RegionType &, ThreadIdType );
+
+  RealType ComputeNeighborhoodPatchSimilarity( const InputImageList &, const IndexType, const InputImagePixelVectorType &, const bool );
 
   InputImagePixelVectorType VectorizeImageListPatch( const InputImageList &, const IndexType, const bool );
 
@@ -328,7 +349,11 @@ private:
 
   void GetMeanAndStandardDeviationOfVectorizedImagePatch( const InputImagePixelVectorType &, RealType &, RealType & );
 
+  VectorType NonNegativeLeastSquares( const MatrixType, const VectorType, const RealType );
+
   void UpdateInputs();
+
+  bool                                                 m_IsWeightedAveragingComplete;
 
   /** Input variables   */
   InputImageList                                       m_TargetImage;
@@ -338,22 +363,28 @@ private:
   MaskImagePointer                                     m_MaskImage;
   LabelType                                            m_MaskLabel;
 
+  typename CountImageType::Pointer                     m_CountImage;
+
   LabelSetType                                         m_LabelSet;
   SizeValueType                                        m_NumberOfAtlases;
   SizeValueType                                        m_NumberOfAtlasSegmentations;
-  SizeValueType                                        m_NumberOfModalities;
+  SizeValueType                                        m_NumberOfAtlasModalities;
 
   NeighborhoodRadiusType                               m_SearchNeighborhoodRadius;
   NeighborhoodRadiusType                               m_PatchNeighborhoodRadius;
   SizeValueType                                        m_SearchNeighborhoodSize;
   SizeValueType                                        m_PatchNeighborhoodSize;
   std::vector<NeighborhoodOffsetType>                  m_SearchNeighborhoodOffsetList;
+  std::vector<NeighborhoodOffsetType>                  m_PatchNeighborhoodOffsetList;
 
   RealType                                             m_Alpha;
   RealType                                             m_Beta;
 
   bool                                                 m_RetainLabelPosteriorProbabilityImages;
   bool                                                 m_RetainAtlasVotingWeightImages;
+  bool                                                 m_ConstrainSolutionToNonnegativeWeights;
+
+  SimilarityMetricType                                 m_SimilarityMetric;
 
   ProbabilityImagePointer                              m_WeightSumImage;
 

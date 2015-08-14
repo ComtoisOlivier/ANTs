@@ -197,6 +197,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
 
   bool retainAtlasVotingImages = false;
   bool retainLabelPosteriorImages = false;
+  bool constrainSolutionToNonnegativeWeights = false;
 
   typename OptionType::Pointer retainLabelPosteriorOption = parser->GetOption( "retain-label-posterior-images" );
   if( retainLabelPosteriorOption && retainLabelPosteriorOption->GetNumberOfFunctions() > 0 )
@@ -209,12 +210,40 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
     {
     retainAtlasVotingImages = parser->Convert<bool>( retainAtlasVotingOption->GetFunction()->GetName() );
     }
+
+  typename OptionType::Pointer constrainWeightsOption = parser->GetOption( "constrain-nonnegative" );
+  if( constrainWeightsOption && constrainWeightsOption->GetNumberOfFunctions() > 0 )
+    {
+    constrainSolutionToNonnegativeWeights = parser->Convert<bool>( constrainWeightsOption->GetFunction()->GetName() );
+    }
+
+  typename OptionType::Pointer metricOption = parser->GetOption( "patch-metric" );
+  if( metricOption && metricOption->GetNumberOfFunctions() > 0 )
+    {
+    std::string metricString = metricOption->GetFunction()->GetName();
+    ConvertToLowerCase( metricString );
+    if( metricString.compare( "pc" ) == 0 )
+      {
+      fusionFilter->SetSimilarityMetric( FusionFilterType::PEARSON_CORRELATION );
+      }
+    else if( metricString.compare( "msq" ) == 0 )
+      {
+      fusionFilter->SetSimilarityMetric( FusionFilterType::MEAN_SQUARES );
+      }
+    else
+      {
+      std::cerr << "Unrecognized metric option. See help menu." << std::endl;
+      return EXIT_FAILURE;
+      }
+    }
+
   fusionFilter->SetRetainAtlasVotingWeightImages( retainAtlasVotingImages );
   fusionFilter->SetRetainLabelPosteriorProbabilityImages( retainLabelPosteriorImages );
+  fusionFilter->SetConstrainSolutionToNonnegativeWeights( constrainSolutionToNonnegativeWeights );
 
   // Get the target image
 
-  unsigned int numberOfModalities = 0;
+  unsigned int numberOfTargetModalities = 0;
 
   typename FusionFilterType::InputImageList targetImageList;
 
@@ -230,12 +259,12 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
 
       targetImageList.push_back( targetImage );
 
-      numberOfModalities = 1;
+      numberOfTargetModalities = 1;
       }
     else
       {
-      numberOfModalities = targetImageOption->GetFunction( 0 )->GetNumberOfParameters();
-      for( unsigned int n = 0; n < numberOfModalities; n++ )
+      numberOfTargetModalities = targetImageOption->GetFunction( 0 )->GetNumberOfParameters();
+      for( unsigned int n = 0; n < numberOfTargetModalities; n++ )
         {
         typename ImageType::Pointer targetImage = ITK_NULLPTR;
 
@@ -264,6 +293,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
 
   unsigned int numberOfAtlases = 0;
   unsigned int numberOfAtlasSegmentations = 0;
+  unsigned int numberOfAtlasModalities = 0;
 
   if( atlasImageOption && atlasImageOption->GetNumberOfFunctions() )
     {
@@ -299,7 +329,9 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
 
     if( atlasImageOption->GetFunction( m )->GetNumberOfParameters() == 0 )
       {
-      if( numberOfModalities != 1 )
+      numberOfAtlasModalities = 1;
+
+      if( numberOfTargetModalities != 1 )
         {
         if( verbose )
           {
@@ -315,7 +347,12 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
       }
     else
       {
-      if( numberOfModalities != atlasImageOption->GetFunction( m )->GetNumberOfParameters() )
+      if( m == 0 )
+        {
+        numberOfAtlasModalities = atlasImageOption->GetFunction( m )->GetNumberOfParameters();
+        }
+
+      if( numberOfAtlasModalities != atlasImageOption->GetFunction( m )->GetNumberOfParameters() )
         {
         if( verbose )
           {
@@ -323,7 +360,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
           }
         return EXIT_FAILURE;
         }
-      for( unsigned int n = 0; n < numberOfModalities; n++ )
+      for( unsigned int n = 0; n < numberOfAtlasModalities; n++ )
         {
         typename ImageType::Pointer atlasImage = ITK_NULLPTR;
 
@@ -460,7 +497,7 @@ int antsJointFusion( itk::ants::CommandLineParser *parser )
       {
       itk::NumericSeriesFileNames::Pointer fileNamesCreator = itk::NumericSeriesFileNames::New();
       fileNamesCreator->SetStartIndex( 1 );
-      fileNamesCreator->SetEndIndex( numberOfModalities );
+      fileNamesCreator->SetEndIndex( numberOfAtlasModalities );
       fileNamesCreator->SetSeriesFormat( intensityFusionName.c_str() );
 
       const std::vector<std::string> & imageNames = fileNamesCreator->GetFileNames();
@@ -647,7 +684,18 @@ void InitializeCommandLineOptions( itk::ants::CommandLineParser *parser )
 
   OptionType::Pointer option = OptionType::New();
   option->SetLongName( "retain-atlas-voting-images" );
-  option->SetShortName( 'v' );
+  option->SetShortName( 'f' );
+  option->SetUsageOption( 0, "(0)/1" );
+  option->SetDescription( description );
+  parser->AddOption( option );
+  }
+
+  {
+  std::string description = std::string( "Constrain solution to non-negative weights." );
+
+  OptionType::Pointer option = OptionType::New();
+  option->SetShortName( 'c' );
+  option->SetLongName( "constrain-nonnegative" );
   option->SetUsageOption( 0, "(0)/1" );
   option->SetDescription( description );
   parser->AddOption( option );
@@ -662,6 +710,20 @@ void InitializeCommandLineOptions( itk::ants::CommandLineParser *parser )
   option->SetShortName( 'p' );
   option->SetUsageOption( 0, "2" );
   option->SetUsageOption( 1, "2x2x2" );
+  option->SetDescription( description );
+  parser->AddOption( option );
+  }
+
+  {
+  std::string description =
+    std::string( "Metric to be used in determining the most similar neighborhood patch.  " )
+    + std::string( "Options include Pearson's correlation (PC) and mean squares (MSQ). " )
+    + std::string( "Default = PC (Pearson correlation)." );
+
+  OptionType::Pointer option = OptionType::New();
+  option->SetLongName( "patch-metric" );
+  option->SetShortName( 'm' );
+  option->SetUsageOption( 0, "(PC)/MSQ" );
   option->SetDescription( description );
   parser->AddOption( option );
   }

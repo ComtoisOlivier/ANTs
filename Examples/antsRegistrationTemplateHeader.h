@@ -24,7 +24,7 @@
 namespace ants
 {
 
-extern const char * RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVelocityField);
+extern const char * RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVelocityField,bool minc);
 
 template <class TComputeType, unsigned VImageDimension>
 int
@@ -39,6 +39,9 @@ DoRegistration(typename ParserType::Pointer & parser)
   typedef typename RegistrationHelperType::CompositeTransformType          CompositeTransformType;
 
   typename RegistrationHelperType::Pointer regHelper = RegistrationHelperType::New();
+
+  OptionType::Pointer useMincFormatOption = parser->GetOption( "minc" );
+  const bool use_minc_format = parser->Convert<bool>( useMincFormatOption->GetFunction( 0 )->GetName() );
 
   bool verbose = false;
   typename itk::ants::CommandLineParser::OptionType::Pointer verboseOption =
@@ -55,18 +58,66 @@ DoRegistration(typename ParserType::Pointer & parser)
     }
 
   OptionType::Pointer transformOption = parser->GetOption( "transform" );
+  if( !transformOption || transformOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the transform option ('-t') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer metricOption = parser->GetOption( "metric" );
+  if( !metricOption || metricOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the metric option ('-m') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer convergenceOption = parser->GetOption( "convergence" );
+  if( !convergenceOption || convergenceOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the convergence option ('-c') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer shrinkFactorsOption = parser->GetOption( "shrink-factors" );
+  if( !shrinkFactorsOption || shrinkFactorsOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the shrink factors option ('-f') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer smoothingSigmasOption = parser->GetOption( "smoothing-sigmas" );
+  if( !smoothingSigmasOption || smoothingSigmasOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the smoothing sigmas option ('-s') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer restrictDeformationOption = parser->GetOption( "restrict-deformation" );
 
   OptionType::Pointer outputOption = parser->GetOption( "output" );
+  if( !outputOption || outputOption->GetNumberOfFunctions() == 0 )
+    {
+    if( verbose )
+      {
+      std::cerr << "ERROR: the output option ('-o') must be specified.  See help menu." << std::endl;
+      }
+    return EXIT_FAILURE;
+    }
 
   OptionType::Pointer maskOption = parser->GetOption( "masks" );
 
@@ -95,15 +146,6 @@ DoRegistration(typename ParserType::Pointer & parser)
   else
     {
     regHelper->SetInitializeTransformsPerStage( false );
-    }
-
-  if( !outputOption || outputOption->GetNumberOfFunctions() == 0 )
-    {
-    if( verbose )
-      {
-      std::cout << "Output option not specified." << std::endl;
-      }
-    return EXIT_FAILURE;
     }
 
   /*
@@ -181,7 +223,7 @@ DoRegistration(typename ParserType::Pointer & parser)
       for( unsigned int n = 0; n < isDerivedInitialMovingTransform.size(); n++ )
         {
         std::stringstream curFileName;
-        curFileName << outputPrefix << n << "DerivedInitialMovingTranslation.mat";
+        curFileName << outputPrefix << n << (use_minc_format?"DerivedInitialMovingTranslation.xfm":"DerivedInitialMovingTranslation.mat");
 
         typename RegistrationHelperType::CompositeTransformType::TransformTypePointer curTransform =
           compositeTransform->GetNthTransform( n );
@@ -213,7 +255,7 @@ DoRegistration(typename ParserType::Pointer & parser)
       for( unsigned int n = 0; n < isDerivedInitialFixedTransform.size(); n++ )
         {
         std::stringstream curFileName;
-        curFileName << outputPrefix << n << "DerivedInitialFixedTranslation.mat";
+        curFileName << outputPrefix << n << (use_minc_format?"DerivedInitialFixedTranslation.xfm":"DerivedInitialFixedTranslation.mat");
 
         typename RegistrationHelperType::CompositeTransformType::TransformTypePointer curTransform =
           compositeTransform->GetNthTransform( n );
@@ -268,13 +310,13 @@ DoRegistration(typename ParserType::Pointer & parser)
       {
       std::cout << "  Reading mask(s)." << std::endl;
       }
-    for( unsigned int l = 0; l < maskOption->GetNumberOfFunctions(); l++ )
+    for( int l = maskOption->GetNumberOfFunctions() - 1; l >= 0; l-- )
       {
       if( verbose )
         {
-        std::cout << "    Registration stage " << l << std::endl;
+        std::cout << "    Registration stage " << ( maskOption->GetNumberOfFunctions() - l - 1 ) << std::endl;
         }
-      if( maskOption->GetFunction( 0 )->GetNumberOfParameters() > 0 )
+      if( maskOption->GetFunction( l )->GetNumberOfParameters() > 0 )
         {
         for( unsigned m = 0; m < maskOption->GetFunction( l )->GetNumberOfParameters(); m++ )
           {
@@ -721,31 +763,43 @@ DoRegistration(typename ParserType::Pointer & parser)
             parser->Convert<unsigned int>( transformOption->GetFunction( currentStage )->GetParameter( 3 ) );
           }
 
-        std::vector<unsigned int> meshSizeForTheUpdateField =
-          parser->ConvertVector<unsigned int>( transformOption->GetFunction( currentStage )->GetParameter( 1 ) );
-        if( meshSizeForTheUpdateField.size() == 1 )
+        std::vector<unsigned int> meshSizeForTheUpdateField;
+
+        std::vector<float> meshSizeForTheUpdateFieldFloat =
+          parser->ConvertVector<float>( transformOption->GetFunction( currentStage )->GetParameter( 1 ) );
+        if( meshSizeForTheUpdateFieldFloat.size() == 1 )
           {
           typename ImageType::Pointer fixedImage;
           ReadImage<ImageType>( fixedImage, fixedImageFileName.c_str() );
           fixedImage->DisconnectPipeline();
 
           meshSizeForTheUpdateField = regHelper->CalculateMeshSizeForSpecifiedKnotSpacing(
-              fixedImage, meshSizeForTheUpdateField[0], splineOrder );
+              fixedImage, meshSizeForTheUpdateFieldFloat[0], splineOrder );
+          }
+        else
+          {
+          meshSizeForTheUpdateField =
+            parser->ConvertVector<unsigned int>( transformOption->GetFunction( currentStage )->GetParameter( 1 ) );
           }
 
         std::vector<unsigned int> meshSizeForTheTotalField;
         if( transformOption->GetFunction( currentStage )->GetNumberOfParameters() > 2 )
           {
-          meshSizeForTheTotalField =
-            parser->ConvertVector<unsigned int>( transformOption->GetFunction( currentStage )->GetParameter( 2 ) );
-          if( meshSizeForTheTotalField.size() == 1 )
+          std::vector<float> meshSizeForTheTotalFieldFloat =
+            parser->ConvertVector<float>( transformOption->GetFunction( currentStage )->GetParameter( 1 ) );
+          if( meshSizeForTheTotalFieldFloat.size() == 1 )
             {
             typename ImageType::Pointer fixedImage;
             ReadImage<ImageType>( fixedImage, fixedImageFileName.c_str() );
             fixedImage->DisconnectPipeline();
 
             meshSizeForTheTotalField = regHelper->CalculateMeshSizeForSpecifiedKnotSpacing(
-                fixedImage, meshSizeForTheTotalField[0], splineOrder );
+                fixedImage, meshSizeForTheTotalFieldFloat[0], splineOrder );
+            }
+          else
+            {
+            meshSizeForTheTotalField =
+              parser->ConvertVector<unsigned int>( transformOption->GetFunction( currentStage )->GetParameter( 1 ) );
             }
           }
         else
@@ -1244,8 +1298,8 @@ DoRegistration(typename ParserType::Pointer & parser)
       }
     if( writeCompositeTransform )
       {
-      std::string compositeTransformFileName = outputPrefix + std::string( "Composite.h5" );
-      std::string inverseCompositeTransformFileName = outputPrefix + std::string( "InverseComposite.h5" );
+      std::string compositeTransformFileName = outputPrefix + (use_minc_format?std::string( ".xfm" ):std::string( "Composite.h5" ));
+      std::string inverseCompositeTransformFileName = outputPrefix + (use_minc_format?std::string( "_inverse.xfm" ):std::string( "InverseComposite.h5" ));
 
       typename RegistrationHelperType::CompositeTransformType::TransformTypePointer compositeTransform =
         transformToWrite.GetPointer();
@@ -1274,7 +1328,7 @@ DoRegistration(typename ParserType::Pointer & parser)
         bool writeInverse;
         bool writeVelocityField;
 
-        std::string transformTemplateName = RegTypeToFileName( curTransformType, writeInverse, writeVelocityField );
+        std::string transformTemplateName = RegTypeToFileName( curTransformType, writeInverse, writeVelocityField, use_minc_format );
 
         std::stringstream curFileName;
         curFileName << outputPrefix << i << transformTemplateName;
@@ -1284,67 +1338,66 @@ DoRegistration(typename ParserType::Pointer & parser)
         // return value.
         itk::ants::WriteTransform<TComputeType, VImageDimension>( curTransform, curFileName.str() );
 
-        typedef typename DisplacementFieldTransformType::DisplacementFieldType  DisplacementFieldType;
         typename DisplacementFieldTransformType::Pointer dispTransform =
           dynamic_cast<DisplacementFieldTransformType *>(curTransform.GetPointer() );
-        // write inverse transform file
         if( writeInverse && dispTransform.IsNotNull() )
           {
-          typename DisplacementFieldType::ConstPointer inverseDispField = dispTransform->GetInverseDisplacementField();
-          if( inverseDispField.IsNotNull() )
-            {
-            std::stringstream curInverseFileName;
-            curInverseFileName << outputPrefix << i << "InverseWarp.nii.gz";
-            typedef itk::ImageFileWriter<DisplacementFieldType> InverseWriterType;
-            typename InverseWriterType::Pointer inverseWriter = InverseWriterType::New();
-            inverseWriter->SetInput( dispTransform->GetInverseDisplacementField() );
-            inverseWriter->SetFileName( curInverseFileName.str().c_str() );
-            try
-              {
-              inverseWriter->Update();
-              }
-            catch( itk::ExceptionObject & err )
-              {
-              if( verbose )
-                {
-                std::cerr << "Can't write transform file " << curInverseFileName.str().c_str() << std::endl;
-                std::cerr << "Exception Object caught: " << std::endl;
-                std::cerr << err << std::endl;
-                }
-              }
-            }
+          std::stringstream curInverseFileName;
+          curInverseFileName << outputPrefix << i << (use_minc_format?"_inverse":"Inverse") << transformTemplateName;
+          // write inverse transform file
+          itk::ants::WriteInverseTransform<TComputeType, VImageDimension>( dispTransform, curInverseFileName.str() );
           }
         if( writeVelocityField )
           {
           // write velocity field (if applicable)
           typedef typename RegistrationHelperType::TimeVaryingVelocityFieldTransformType
-            VelocityFieldTransformType;
+            TimeVaryingVelocityFieldTransformType;
 
-          typedef itk::Image<itk::Vector<TComputeType, VImageDimension>, VImageDimension + 1> VelocityFieldType;
-          typename VelocityFieldTransformType::Pointer velocityFieldTransform =
-            dynamic_cast<VelocityFieldTransformType *>(curTransform.GetPointer() );
-          if( !velocityFieldTransform.IsNull() )
+          typedef itk::GaussianExponentialDiffeomorphicTransform<TComputeType, VImageDimension>
+            GaussianDisplacementFieldTransformType;
+
+          typename TimeVaryingVelocityFieldTransformType::Pointer tvVelocityFieldTransform =
+            dynamic_cast<TimeVaryingVelocityFieldTransformType *>(curTransform.GetPointer() );
+          typename GaussianDisplacementFieldTransformType::Pointer constVelocityFieldTransform =
+            dynamic_cast<GaussianDisplacementFieldTransformType *>(curTransform.GetPointer() );
+
+          std::stringstream curVelocityFieldFileName;
+          curVelocityFieldFileName << outputPrefix << i << (use_minc_format?"_VelocityField.mnc":"VelocityField.nii.gz");
+          try
             {
-            std::stringstream curVelocityFieldFileName;
-            curVelocityFieldFileName << outputPrefix << i << "VelocityField.nii.gz";
 
-            typedef itk::ImageFileWriter<VelocityFieldType> VelocityFieldWriterType;
-            typename VelocityFieldWriterType::Pointer velocityFieldWriter = VelocityFieldWriterType::New();
-            velocityFieldWriter->SetInput( velocityFieldTransform->GetTimeVaryingVelocityField() );
-            velocityFieldWriter->SetFileName( curVelocityFieldFileName.str().c_str() );
-            try
+
+
+            if( !tvVelocityFieldTransform.IsNull() )
               {
-              velocityFieldWriter->Update();
+
+              typedef itk::Image<itk::Vector<TComputeType, VImageDimension>, VImageDimension + 1> VelocityFieldType;
+              typedef itk::ImageFileWriter<VelocityFieldType> VelocityFieldWriterType;
+              typename VelocityFieldWriterType::Pointer velocityFieldWriter = VelocityFieldWriterType::New();
+
+              velocityFieldWriter->SetInput( tvVelocityFieldTransform->GetTimeVaryingVelocityField() );
+              velocityFieldWriter->SetFileName( curVelocityFieldFileName.str().c_str() );
+                velocityFieldWriter->Update();
               }
-            catch( itk::ExceptionObject & err )
+            else if( !constVelocityFieldTransform.IsNull() )
               {
-              if( verbose )
-                {
-                std::cerr << "Can't write velocity field transform file " << curVelocityFieldFileName.str().c_str()
-                  << std::endl;
-                std::cerr << "Exception Object caught: " << std::endl;
-                std::cerr << err << std::endl;
-                }
+              typedef itk::Image<itk::Vector<TComputeType, VImageDimension>, VImageDimension> VelocityFieldType;
+              typedef itk::ImageFileWriter<VelocityFieldType> VelocityFieldWriterType;
+              typename VelocityFieldWriterType::Pointer velocityFieldWriter = VelocityFieldWriterType::New();
+
+              velocityFieldWriter->SetInput( constVelocityFieldTransform->GetModifiableConstantVelocityField() );
+              velocityFieldWriter->SetFileName( curVelocityFieldFileName.str().c_str() );
+                velocityFieldWriter->Update();
+              }
+            }
+          catch( itk::ExceptionObject & err )
+            {
+            if( verbose )
+              {
+              std::cerr << "Can't write velocity field transform file " << curVelocityFieldFileName.str().c_str()
+                << std::endl;
+              std::cerr << "Exception Object caught: " << std::endl;
+              std::cerr << err << std::endl;
               }
             }
           }

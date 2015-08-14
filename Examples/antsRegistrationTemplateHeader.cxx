@@ -2,7 +2,7 @@
 
 namespace ants{
 const char *
-RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVelocityField)
+RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVelocityField, bool minc)
 {
   std::string str(type);
 
@@ -25,7 +25,11 @@ RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVel
     }
 
   if( str == "timevaryingvelocityfield" ||
-      str == "tvf" )
+      str == "tvf" ||
+      str == "exp" ||
+      str == "exponential" ||
+      str == "bsplineexponential"
+    )
     {
     writeVelocityField = true;
     }
@@ -36,29 +40,47 @@ RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVel
 
   if( str == "rigid" )
     {
-    return "Rigid.mat";
+      if(minc)
+        return "_Rigid.xfm";
+      else
+        return "Rigid.mat";
     }
   else if( str == "affine" ||
            str == "compositeaffine" || str == "compaff" )
     {
-    return "Affine.mat";
+    if(minc)
+      return "_Affine.xfm";
+    else
+      return "Affine.mat";
     }
   else if( str == "similarity" )
     {
-    return "Similarity.mat";
+    if(minc)
+      return "_Similarity.xfm";
+    else
+      return "Similarity.mat";
     }
   else if( str == "translation" )
     {
-    return "Translation.mat";
+    if(minc)
+      return "_Translation.xfm";
+    else
+      return "Translation.mat";
     }
   else if( str == "bspline" ||
            str == "ffd" )
     {
-    return "BSpline.txt";
+    if(minc)
+      return "_BSpline.txt";
+    else
+      return "BSpline.txt";
     }
   else if( str == "genericaffine" )
     {
-    return "GenericAffine.mat";
+    if(minc)
+      return "_GenericAffine.xfm";
+    else
+      return "GenericAffine.mat";
     }
   else if( str == "gaussiandisplacementfield" ||
            str == "gdf" ||
@@ -67,15 +89,24 @@ RegTypeToFileName(const std::string & type, bool & writeInverse, bool & writeVel
            str == "syn" ||
            str == "symmetricnormalization" ||
            str == "bsplinesyn" ||
-           str == "timevaryingvelocityfield" ||
-           str == "tvf" ||
-           str == "timevaryingbsplinevelocityfield" ||
-           str == "tvdmffd" ||
            str == "exp" ||
            str == "exponential" ||
            str == "bsplineexponential" )
     {
-    return "Warp.nii.gz";
+    if(minc)
+      return "_NL.xfm";
+    else
+      return "Warp.nii.gz";
+    }
+  else if( str == "timevaryingvelocityfield" ||
+           str == "tvf" ||
+           str == "timevaryingbsplinevelocityfield" ||
+           str == "tvdmffd"  )
+    {
+    if(minc)
+      return "_Warp.mnc";
+    else
+      return "Warp.nii.gz";
     }
   return "BOGUS.XXXX";
 }

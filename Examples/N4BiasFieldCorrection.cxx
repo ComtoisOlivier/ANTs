@@ -131,7 +131,7 @@ int N4( itk::ants::CommandLineParser *parser )
     {
     if( verbose )
       {
-      std::cout << "Mask not read.  Creating Otsu mask." << std::endl;
+      std::cout << "Mask not read.  Creating Otsu mask." << std::endl << std::endl;
       }
     typedef itk::OtsuThresholdImageFilter<ImageType, MaskImageType>
       ThresholderType;
@@ -229,13 +229,13 @@ int N4( itk::ants::CommandLineParser *parser )
         //     requested domain size.
         float splineDistance = array[0];
 
+        typename ImageType::SizeType originalImageSize = inputImage->GetLargestPossibleRegion().GetSize();
+
         unsigned long lowerBound[ImageDimension];
         unsigned long upperBound[ImageDimension];
         for( unsigned int d = 0; d < ImageDimension; d++ )
           {
-          float domain = static_cast<RealType>( inputImage->
-                                                GetLargestPossibleRegion().GetSize()[d]
-                                                - 1 ) * inputImage->GetSpacing()[d];
+          float domain = static_cast<RealType>( originalImageSize[d] - 1 ) * inputImage->GetSpacing()[d];
           unsigned int numberOfSpans = static_cast<unsigned int>(
               vcl_ceil( domain / splineDistance ) );
           unsigned long extraPadding = static_cast<unsigned long>( ( numberOfSpans
@@ -282,6 +282,15 @@ int N4( itk::ants::CommandLineParser *parser )
           weightImage = weightPadder->GetOutput();
           weightImage->DisconnectPipeline();
           }
+
+        if( verbose )
+          {
+          std::cout << "Specified spline distance: " << splineDistance << "mm" << std::endl;
+          std::cout << "  original image size:  " << originalImageSize << std::endl;
+          std::cout << "  padded image size:  " << inputImage->GetLargestPossibleRegion().GetSize() << std::endl;
+          std::cout << "  number of control points:  " << numberOfControlPoints << std::endl;
+          std::cout << std::endl;
+          }
         }
       else if( array.size() == ImageDimension )
         {
@@ -322,6 +331,11 @@ int N4( itk::ants::CommandLineParser *parser )
     }
   shrinker->SetShrinkFactors( shrinkFactor );
   maskshrinker->SetShrinkFactors( shrinkFactor );
+  if( ImageDimension == 4 )
+    {
+    shrinker->SetShrinkFactor( 3, 1 );
+    maskshrinker->SetShrinkFactor( 3, 1 );
+    }
   shrinker->Update();
   maskshrinker->Update();
 
@@ -336,7 +350,7 @@ int N4( itk::ants::CommandLineParser *parser )
   if( weightImage )
     {
     weightshrinker->SetInput( weightImage );
-    weightshrinker->SetShrinkFactors( shrinkFactor );
+    weightshrinker->SetShrinkFactors( shrinker->GetShrinkFactors() );
     weightshrinker->Update();
 
     correcter->SetConfidenceImage( weightshrinker->GetOutput() );
@@ -642,7 +656,9 @@ void N4InitializeCommandLineOptions( itk::ants::CommandLineParser *parser )
     std::string( "Running N4 on large images can be time consuming. " )
     + std::string( "To lessen computation time, the input image can be resampled. " )
     + std::string( "The shrink factor, specified as a single integer, describes " )
-    + std::string( "this resampling.  Shrink factors <= 4 are commonly used." );
+    + std::string( "this resampling.  Shrink factors <= 4 are commonly used." )
+    + std::string( "Note that the shrink factor is only applied to the first two or " )
+    + std::string( "three dimensions which we assume are spatial.  " );
 
   OptionType::Pointer option = OptionType::New();
   option->SetLongName( "shrink-factor" );

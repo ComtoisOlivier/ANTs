@@ -153,9 +153,8 @@ if(NOT DEFINED ${extProjName}_DIR AND NOT ${USE_SYSTEM_${extProjName}})
 
   ### --- End Project specific additions
   set(${proj}_REPOSITORY ${git_protocol}://itk.org/ITK.git)
-  set(${proj}_REPOSITORY "https://github.com/InsightSoftwareConsortium/ITK.git")
-  set(${proj}_GIT_TAG 042875b0246b0b2da1c1c58bf2f606b9590f6979)
-  set(ITK_VERSION_ID ITK-4.8) ### NOTE: When updating GIT_TAG, also update ITK_VERSION_ID
+  set(${proj}_GIT_TAG 8f51c0dcb33e796a3aac2728a0d613527b169491) ## MI multi-thread performance
+  set(ITK_VERSION_ID ITK-4.9) ### NOTE: When updating GIT_TAG, also update ITK_VERSION_ID
 
   ExternalProject_Add(${proj}
     GIT_REPOSITORY ${${proj}_REPOSITORY}

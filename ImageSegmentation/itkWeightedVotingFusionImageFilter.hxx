@@ -24,23 +24,30 @@
 #include "itkProgressReporter.h"
 
 #include <vnl/algo/vnl_svd.h>
+#include <vnl/vnl_inverse.h>
 
 namespace itk {
 
 template<typename TInputImage, typename TOutputImage>
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 ::WeightedVotingFusionImageFilter() :
+  m_IsWeightedAveragingComplete( false ),
   m_NumberOfAtlases( 0 ),
   m_NumberOfAtlasSegmentations( 0 ),
-  m_NumberOfModalities( 0 ),
+  m_NumberOfAtlasModalities( 0 ),
   m_PatchNeighborhoodSize( 0 ),
   m_Alpha( 0.1 ),
   m_Beta( 2.0 ),
   m_RetainLabelPosteriorProbabilityImages( false ),
-  m_RetainAtlasVotingWeightImages( false )
+  m_RetainAtlasVotingWeightImages( false ),
+  m_ConstrainSolutionToNonnegativeWeights( false )
 {
   this->m_MaskImage = ITK_NULLPTR;
   this->m_MaskLabel = NumericTraits<LabelType>::OneValue();
+
+  this->m_CountImage = ITK_NULLPTR;
+
+  this->m_SimilarityMetric = PEARSON_CORRELATION;
 }
 
 template <class TInputImage, class TOutputImage>
@@ -50,19 +57,19 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 {
   // Set all the inputs
 
-  this->SetNumberOfIndexedInputs( ( this->m_NumberOfAtlases  + 1 ) * this->m_NumberOfModalities +
-    this->m_NumberOfAtlasSegmentations + this->m_LabelExclusionImages.size() );
+  this->SetNumberOfIndexedInputs( this->m_NumberOfAtlases * this->m_NumberOfAtlasModalities +
+    this->m_NumberOfAtlasSegmentations + this->m_TargetImage.size() + this->m_LabelExclusionImages.size() );
 
   SizeValueType nthInput = 0;
 
-  for( SizeValueType i = 0; i < this->m_NumberOfModalities; i++ )
+  for( SizeValueType i = 0; i < this->m_TargetImage.size(); i++ )
     {
     this->SetNthInput( nthInput++, this->m_TargetImage[i] );
     }
 
   for( SizeValueType i = 0; i < this->m_NumberOfAtlases; i++ )
     {
-    for( SizeValueType j = 0; j < this->m_NumberOfModalities; j++ )
+    for( SizeValueType j = 0; j < this->m_NumberOfAtlasModalities; j++ )
       {
       this->SetNthInput( nthInput++, this->m_AtlasImages[i][j] );
       }
@@ -103,7 +110,7 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
   // Iterate over all the inputs to this filter
 
-  for( SizeValueType i = 0; i < this->m_NumberOfModalities; i++ )
+  for( SizeValueType i = 0; i < this->m_TargetImage.size(); i++ )
     {
     InputImageType *input = this->m_TargetImage[i];
     RegionType region = outRegion;
@@ -113,7 +120,7 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
   for( SizeValueType i = 0; i < this->m_NumberOfAtlases; i++ )
     {
-    for( SizeValueType j = 0; j < this->m_NumberOfModalities; j++ )
+    for( SizeValueType j = 0; j < this->m_NumberOfAtlasModalities; j++ )
       {
       InputImageType *input = this->m_AtlasImages[i][j];
       RegionType region = outRegion;
@@ -151,6 +158,41 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 template <class TInputImage, class TOutputImage>
 void
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
+::GenerateData()
+{
+  this->BeforeThreadedGenerateData();
+
+  /**
+   * Multithread processing for the weighted averaging
+   */
+  typename ImageSource<TOutputImage>::ThreadStruct str1;
+  str1.Filter = this;
+
+  this->GetMultiThreader()->SetNumberOfThreads( this->GetNumberOfThreads() );
+  this->GetMultiThreader()->SetSingleMethod( this->ThreaderCallback, &str1 );
+
+  this->GetMultiThreader()->SingleMethodExecute();
+
+  this->m_IsWeightedAveragingComplete = true;
+
+  /**
+   * Multithread processing for the image(s) reconstruction
+   */
+
+  typename ImageSource<TOutputImage>::ThreadStruct str2;
+  str2.Filter = this;
+
+  this->GetMultiThreader()->SetNumberOfThreads( this->GetNumberOfThreads() );
+  this->GetMultiThreader()->SetSingleMethod( this->ThreaderCallback, &str2 );
+
+  this->GetMultiThreader()->SingleMethodExecute();
+
+  this->AfterThreadedGenerateData();
+}
+
+template <class TInputImage, class TOutputImage>
+void
+WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 ::BeforeThreadedGenerateData()
 {
   if( this->m_NumberOfAtlasSegmentations != this->m_NumberOfAtlases )
@@ -158,6 +200,13 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
     // Set the number of atlas segmentations to 0 since we're just going to
     // doing joint intensity fusion
     this->m_NumberOfAtlasSegmentations = 0;
+    }
+
+  // Check to see if the number of target images is equal to 1 or equal to the number
+  // of atlas modalities
+  if( this->m_TargetImage.size() != 1 && this->m_TargetImage.size() != this->m_NumberOfAtlasModalities )
+    {
+    itkExceptionMacro( "The number of target images must be 1 or must be the number of atlas modalities." );
     }
 
   // Find all the unique labels in the atlas segmentations
@@ -211,14 +260,14 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
   // Do the joint intensity fusion
   this->m_JointIntensityFusionImage.clear();
-  this->m_JointIntensityFusionImage.resize( this->m_NumberOfModalities );
+  this->m_JointIntensityFusionImage.resize( this->m_NumberOfAtlasModalities );
 
-  for( SizeValueType i = 0; i < this->m_NumberOfModalities; i++ )
+  for( SizeValueType i = 0; i < this->m_NumberOfAtlasModalities; i++ )
     {
     this->m_JointIntensityFusionImage[i] = InputImageType::New();
-    this->m_JointIntensityFusionImage[i]->CopyInformation( this->m_TargetImage[i] );
-    this->m_JointIntensityFusionImage[i]->SetRegions( this->m_TargetImage[i]->GetRequestedRegion() );
-    this->m_JointIntensityFusionImage[i]->SetLargestPossibleRegion( this->m_TargetImage[i]->GetLargestPossibleRegion() );
+    this->m_JointIntensityFusionImage[i]->CopyInformation( this->m_TargetImage[0] );
+    this->m_JointIntensityFusionImage[i]->SetRegions( this->m_TargetImage[0]->GetRequestedRegion() );
+    this->m_JointIntensityFusionImage[i]->SetLargestPossibleRegion( this->m_TargetImage[0]->GetLargestPossibleRegion() );
     this->m_JointIntensityFusionImage[i]->Allocate();
     this->m_JointIntensityFusionImage[i]->FillBuffer( 0.0 );
     }
@@ -231,7 +280,15 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
   this->m_WeightSumImage->Allocate();
   this->m_WeightSumImage->FillBuffer( 0.0 );
 
-  // Determine the offset list
+  // Initialize the count image
+  this->m_CountImage = CountImageType::New();
+  this->m_CountImage->CopyInformation( this->m_TargetImage[0] );
+  this->m_CountImage->SetRegions( this->m_TargetImage[0]->GetRequestedRegion() );
+  this->m_CountImage->SetLargestPossibleRegion( this->m_TargetImage[0]->GetLargestPossibleRegion() );
+  this->m_CountImage->Allocate();
+  this->m_CountImage->FillBuffer( 0 );
+
+  // Determine the offset lists
 
   ConstNeighborhoodIterator<InputImageType> It( this->m_SearchNeighborhoodRadius,
     this->GetInput(), this->GetInput()->GetRequestedRegion() );
@@ -244,14 +301,15 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
     this->m_SearchNeighborhoodOffsetList.push_back( ( It.GetNeighborhood() ).GetOffset( n ) );
     }
 
-  // Determine neighborhood sizes
+  ConstNeighborhoodIterator<InputImageType> It2( this->m_PatchNeighborhoodRadius,
+    this->GetInput(), this->GetInput()->GetRequestedRegion() );
 
-  this->m_PatchNeighborhoodSize = 1;
-  this->m_SearchNeighborhoodSize = 1;
-  for( SizeValueType d = 0; d < ImageDimension; d++ )
+  this->m_PatchNeighborhoodOffsetList.clear();
+
+  this->m_PatchNeighborhoodSize = ( It2.GetNeighborhood() ).Size();
+  for( unsigned int n = 0; n < this->m_PatchNeighborhoodSize; n++ )
     {
-    this->m_PatchNeighborhoodSize *= ( 2 * this->m_PatchNeighborhoodRadius[d] + 1 );
-    this->m_SearchNeighborhoodSize *= ( 2 * this->m_SearchNeighborhoodRadius[d] + 1 );
+    this->m_PatchNeighborhoodOffsetList.push_back( ( It2.GetNeighborhood() ).GetOffset( n ) );
     }
 
   this->AllocateOutputs();
@@ -260,31 +318,73 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 template <class TInputImage, class TOutputImage>
 void
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
-::ThreadedGenerateData( const RegionType & region, ThreadIdType threadId )
+::ThreadedGenerateData( const RegionType &region, ThreadIdType threadId )
+{
+  if( !this->m_IsWeightedAveragingComplete )
+    {
+    this->ThreadedGenerateDataForWeightedAveraging( region, threadId );
+    }
+  else
+    {
+    this->ThreadedGenerateDataForReconstruction( region, threadId );
+    }
+}
+
+template <class TInputImage, class TOutputImage>
+void
+WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
+::ThreadedGenerateDataForWeightedAveraging( const RegionType & region, ThreadIdType threadId )
 {
   ProgressReporter progress( this, threadId, region.GetNumberOfPixels(), 100 );
 
   typename OutputImageType::Pointer output = this->GetOutput();
 
+  SizeValueType numberOfTargetModalities = this->m_TargetImage.size();
+
   MatrixType absoluteAtlasPatchDifferences( this->m_NumberOfAtlases,
-    this->m_PatchNeighborhoodSize * this->m_NumberOfModalities );
+    this->m_PatchNeighborhoodSize * numberOfTargetModalities );
 
   MatrixType originalAtlasPatchIntensities( this->m_NumberOfAtlases,
-    this->m_PatchNeighborhoodSize * this->m_NumberOfModalities );
+    this->m_PatchNeighborhoodSize * this->m_NumberOfAtlasModalities );
 
   std::vector<SizeValueType> minimumAtlasOffsetIndices( this->m_NumberOfAtlases );
+
+  bool useOnlyFirstAtlasImage = true;
+  if( numberOfTargetModalities == this->m_NumberOfAtlasModalities )
+    {
+    useOnlyFirstAtlasImage = false;
+    }
 
   // Iterate over the input region
   ConstNeighborhoodIteratorType ItN( this->m_PatchNeighborhoodRadius, this->m_TargetImage[0], region );
   for( ItN.GoToBegin(); !ItN.IsAtEnd(); ++ItN )
     {
-    if( this->m_MaskImage && this->m_MaskImage->GetPixel( ItN.GetIndex() ) != this->m_MaskLabel )
+    IndexType currentCenterIndex = ItN.GetIndex();
+
+    if( this->m_MaskImage && this->m_MaskImage->GetPixel( currentCenterIndex ) != this->m_MaskLabel )
       {
       progress.CompletedPixel();
       continue;
       }
 
-    IndexType currentCenterIndex = ItN.GetIndex();
+    // Check to see if there are any non-zero labels
+    if( this->m_NumberOfAtlasSegmentations > 0 )
+      {
+      bool nonBackgroundLabelExistAtThisVoxel = false;
+      for( SizeValueType i = 0; i < this->m_NumberOfAtlasSegmentations; i++ )
+        {
+        if( this->m_AtlasSegmentations[i]->GetPixel( currentCenterIndex ) > 0 )
+          {
+          nonBackgroundLabelExistAtThisVoxel = true;
+          break;
+          }
+        }
+      if( ! nonBackgroundLabelExistAtThisVoxel )
+        {
+        progress.CompletedPixel();
+        continue;
+        }
+      }
 
     InputImagePixelVectorType normalizedTargetPatch =
       this->VectorizeImageListPatch( this->m_TargetImage, currentCenterIndex, true );
@@ -308,10 +408,8 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
           continue;
           }
 
-        InputImagePixelVectorType individualAtlasPatch =
-          this->VectorizeImageListPatch( this->m_AtlasImages[i], searchIndex, false );
-
-        RealType patchSimilarity = this->ComputePatchSimilarity( individualAtlasPatch, normalizedTargetPatch  );
+        RealType patchSimilarity = this->ComputeNeighborhoodPatchSimilarity(
+          this->m_AtlasImages[i], searchIndex, normalizedTargetPatch, useOnlyFirstAtlasImage );
 
         if( patchSimilarity < minimumPatchSimilarity )
           {
@@ -322,24 +420,39 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
       // Once the patch has been found, normalize it and then compute the absolute
       // difference with target patch
+
       IndexType minimumIndex = currentCenterIndex +
         this->m_SearchNeighborhoodOffsetList[minimumPatchOffsetIndex];
-      InputImagePixelVectorType normalizedMinimumAtlasPatch =
-        this->VectorizeImageListPatch( this->m_AtlasImages[i], minimumIndex, true );
-      InputImagePixelVectorType originalMinimumAtlasPatch =
-        this->VectorizeImageListPatch( this->m_AtlasImages[i], minimumIndex, false );
+      InputImagePixelVectorType normalizedMinimumAtlasPatch;
+      if( numberOfTargetModalities == this->m_NumberOfAtlasModalities )
+        {
+        normalizedMinimumAtlasPatch =
+          this->VectorizeImageListPatch( this->m_AtlasImages[i], minimumIndex, true );
+        }
+      else
+        {
+        normalizedMinimumAtlasPatch =
+          this->VectorizeImagePatch( this->m_AtlasImages[i][0], minimumIndex, true );
+        }
 
       typename InputImagePixelVectorType::const_iterator itA = normalizedMinimumAtlasPatch.begin();
       typename InputImagePixelVectorType::const_iterator itT = normalizedTargetPatch.begin();
-      typename InputImagePixelVectorType::const_iterator itO = originalMinimumAtlasPatch.begin();
       while( itA != normalizedMinimumAtlasPatch.end() )
         {
         RealType value = std::fabs( *itA - *itT );
         absoluteAtlasPatchDifferences(i, itA - normalizedMinimumAtlasPatch.begin()) = value;
-        originalAtlasPatchIntensities(i, itO - originalMinimumAtlasPatch.begin()) = *itO;
 
         ++itA;
         ++itT;
+        }
+
+      InputImagePixelVectorType originalMinimumAtlasPatch =
+        this->VectorizeImageListPatch( this->m_AtlasImages[i], minimumIndex, false );
+
+      typename InputImagePixelVectorType::const_iterator itO = originalMinimumAtlasPatch.begin();
+      while( itO != originalMinimumAtlasPatch.end() )
+        {
+        originalAtlasPatchIntensities(i, itO - originalMinimumAtlasPatch.begin()) = *itO;
         ++itO;
         }
 
@@ -356,7 +469,7 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
         {
         RealType mxValue = 0.0;
 
-        for( unsigned int k = 0; k < this->m_PatchNeighborhoodSize * this->m_NumberOfModalities; k++ )
+        for( unsigned int k = 0; k < this->m_PatchNeighborhoodSize * numberOfTargetModalities; k++ )
           {
           mxValue += absoluteAtlasPatchDifferences[i][k] * absoluteAtlasPatchDifferences[j][k];
           }
@@ -387,7 +500,24 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
     // Define a vector of all ones
     VectorType ones( this->m_NumberOfAtlases, 1.0 );
-    VectorType W = vnl_svd<RealType>( MxBar ).solve( ones );
+    VectorType W( this->m_NumberOfAtlases, 1.0 );
+
+    if( this->m_ConstrainSolutionToNonnegativeWeights )
+      {
+      W = this->NonNegativeLeastSquares( MxBar, ones, 1e-6 );
+      }
+    else
+      {
+      W = vnl_svd<RealType>( MxBar ).solve( ones );
+
+      for( SizeValueType i = 0; i < W.size(); i++ )
+        {
+        if( W[i] < 0.0 )
+          {
+          W[i] = 0.0;
+          }
+        }
+      }
 
     // Normalize the weights
     W *= 1.0 / dot_product( W, ones );
@@ -395,22 +525,9 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
     // Do joint intensity fusion
     VectorType estimatedNeighborhoodIntensities = W;
 
-    for( SizeValueType i = 0; i < estimatedNeighborhoodIntensities.size(); i++ )
-      {
-      if( estimatedNeighborhoodIntensities[i] < 0.0 )
-        {
-        estimatedNeighborhoodIntensities[i] = 0.0;
-        }
-      }
-
-    if( estimatedNeighborhoodIntensities.one_norm() > 0 )
-      {
-      estimatedNeighborhoodIntensities /= estimatedNeighborhoodIntensities.one_norm();
-      }
-
     estimatedNeighborhoodIntensities.post_multiply( originalAtlasPatchIntensities );
 
-    for( SizeValueType i = 0; i < this->m_NumberOfModalities; i++ )
+    for( SizeValueType i = 0; i < this->m_NumberOfAtlasModalities; i++ )
       {
       for( SizeValueType j = 0; j < this->m_PatchNeighborhoodSize; j++ )
         {
@@ -437,6 +554,11 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
         this->m_JointIntensityFusionImage[i]->SetPixel( neighborhoodIndex,
            static_cast<InputImagePixelType>( estimatedValue ) );
+        if( i == 0 )
+          {
+          this->m_CountImage->SetPixel( neighborhoodIndex,
+            this->m_CountImage->GetPixel( neighborhoodIndex ) + 1 );
+          }
         }
       }
 
@@ -490,12 +612,13 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 template <class TInputImage, class TOutputImage>
 void
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
-::AfterThreadedGenerateData()
+::ThreadedGenerateDataForReconstruction( const RegionType &region, ThreadIdType
+  itkNotUsed( threadId ) )
 {
   typename OutputImageType::Pointer output = this->GetOutput();
 
   // Perform voting at each voxel
-  ImageRegionIteratorWithIndex<OutputImageType> It( output, output->GetBufferedRegion() );
+  ImageRegionIteratorWithIndex<OutputImageType> It( output, region );
 
   for( It.GoToBegin(); !It.IsAtEnd(); ++It )
     {
@@ -532,14 +655,8 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
     It.Set( winningLabel );
     }
 
-  // Clear posterior maps if not kept
-  if( !this->m_RetainLabelPosteriorProbabilityImages )
-    {
-    this->m_LabelPosteriorProbabilityImages.clear();
-    }
-
   ImageRegionIteratorWithIndex<ProbabilityImageType> ItW( this->m_WeightSumImage,
-    this->m_WeightSumImage->GetBufferedRegion() );
+    region );
 
   for( ItW.GoToBegin(); !ItW.IsAtEnd(); ++ItW )
     {
@@ -576,17 +693,43 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 }
 
 template <class TInputImage, class TOutputImage>
+void
+WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
+::AfterThreadedGenerateData()
+{
+  // Clear posterior maps if not kept
+  if( !this->m_RetainLabelPosteriorProbabilityImages )
+    {
+    this->m_LabelPosteriorProbabilityImages.clear();
+    }
+
+  // Normalize the joint intensity fusion images.
+  for( SizeValueType i = 0; i < this->m_NumberOfAtlasModalities; i++ )
+    {
+    ImageRegionIterator<InputImageType> ItJ( this->m_JointIntensityFusionImage[i],
+      this->m_JointIntensityFusionImage[i]->GetBufferedRegion() );
+    ImageRegionIterator<CountImageType> ItC( this->m_CountImage,
+      this->m_CountImage->GetBufferedRegion() );
+
+    for( ItJ.GoToBegin(), ItC.GoToBegin(); !ItJ.IsAtEnd(); ++ItJ, ++ItC )
+      {
+      typename CountImageType::PixelType count = ItC.Get();
+
+      if( count > 0 )
+        {
+        ItJ.Set( ItJ.Get() / static_cast<RealType>( count ) );
+        }
+      }
+    }
+}
+
+template <class TInputImage, class TOutputImage>
 typename WeightedVotingFusionImageFilter<TInputImage, TOutputImage>::InputImagePixelVectorType
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 ::VectorizeImageListPatch( const InputImageList &imageList, const IndexType index, const bool normalize )
 {
-  if( imageList.size() != this->m_NumberOfModalities )
-    {
-    itkExceptionMacro( "Input image list size does not equal the number of modalities." );
-    }
-
-  InputImagePixelVectorType patchVector( this->m_PatchNeighborhoodSize * this->m_NumberOfModalities );
-  for( unsigned int i = 0; i < this->m_NumberOfModalities; i++ )
+  InputImagePixelVectorType patchVector( this->m_PatchNeighborhoodSize * imageList.size() );
+  for( unsigned int i = 0; i < imageList.size(); i++ )
     {
     InputImagePixelVectorType patchVectorPerModality = this->VectorizeImagePatch( imageList[i], index, normalize );
     for( unsigned int j = 0; j < this->m_PatchNeighborhoodSize; j++ )
@@ -602,16 +745,15 @@ typename WeightedVotingFusionImageFilter<TInputImage, TOutputImage>::InputImageP
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 ::VectorizeImagePatch( const InputImagePointer image, const IndexType index, const bool normalize )
 {
-  ConstNeighborhoodIteratorType It( this->m_PatchNeighborhoodRadius, image, image->GetRequestedRegion() );
-  It.SetLocation( index );
-
   InputImagePixelVectorType patchVector( this->m_PatchNeighborhoodSize );
   for( SizeValueType i = 0; i < this->m_PatchNeighborhoodSize; i++ )
     {
-    bool isInBounds;
-    InputImagePixelType pixel = It.GetPixel( i, isInBounds );
+    IndexType neighborhoodIndex = index + this->m_PatchNeighborhoodOffsetList[i];
+
+    bool isInBounds = image->GetBufferedRegion().IsInside( neighborhoodIndex );
     if( isInBounds )
       {
+      InputImagePixelType pixel = image->GetPixel( neighborhoodIndex );
       patchVector[i] = pixel;
       }
     }
@@ -658,26 +800,199 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 template <class TInputImage, class TOutputImage>
 typename WeightedVotingFusionImageFilter<TInputImage, TOutputImage>::RealType
 WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
-::ComputePatchSimilarity( const InputImagePixelVectorType &patchVectorX,
-  const InputImagePixelVectorType &normalizedPatchVectorY )
+::ComputeNeighborhoodPatchSimilarity( const InputImageList &imageList, const IndexType index,
+  const InputImagePixelVectorType &normalizedPatchVectorY, const bool useOnlyFirstImage )
 {
-  RealType sumX = 0.0;
-  RealType sumOfSquaresX = 0.0;
-  RealType sumXY = 0.0;
-  for( SizeValueType i = 0; i < patchVectorX.size(); i++ )
+  unsigned int numberOfImagesToUse = imageList.size();
+  if( useOnlyFirstImage )
     {
-    RealType x = static_cast<RealType>( patchVectorX[i] );
-    RealType y = static_cast<RealType>( normalizedPatchVectorY[i] );
-    sumX += x;
-    sumOfSquaresX += vnl_math_sqr( x );
-    sumXY += ( x * y );
+    numberOfImagesToUse = 1;
     }
 
-  RealType varianceX =
-    sumOfSquaresX - vnl_math_sqr( sumX ) / static_cast<RealType>( patchVectorX.size() );
-  varianceX = vnl_math_max( varianceX, 1.0 );
+  RealType sumX = 0.0;
+  RealType sumOfSquaresX = 0.0;
+  RealType sumOfSquaredDifferencesXY = 0.0;
+  RealType sumXY = 0.0;
 
-  return ( sumXY > 0 ? -vnl_math_sqr( sumXY ) / varianceX : vnl_math_sqr( sumXY ) / varianceX );
+  SizeValueType count = 0;
+  for( SizeValueType i = 0; i < numberOfImagesToUse; i++ )
+    {
+    for( SizeValueType j = 0; j < this->m_PatchNeighborhoodSize; j++ )
+      {
+      IndexType neighborhoodIndex = index + this->m_PatchNeighborhoodOffsetList[j];
+
+      RealType x = static_cast<RealType>( imageList[i]->GetPixel( neighborhoodIndex ) );
+      RealType y = static_cast<RealType>( normalizedPatchVectorY[count++] );
+
+      sumX += x;
+      sumOfSquaresX += vnl_math_sqr( x );
+      sumXY += ( x * y );
+
+      sumOfSquaredDifferencesXY += vnl_math_sqr( y - x );
+      }
+    }
+  RealType N = static_cast<RealType>( normalizedPatchVectorY.size() );
+
+  if( this->m_SimilarityMetric == PEARSON_CORRELATION )
+    {
+    RealType varianceX = sumOfSquaresX - vnl_math_sqr( sumX ) / N;
+    varianceX = vnl_math_max( varianceX, 1.0e-6 );
+
+    RealType measure = vnl_math_sqr( sumXY ) / varianceX;
+    return ( sumXY > 0 ? -measure : measure );
+    }
+  else if( this->m_SimilarityMetric == MEAN_SQUARES )
+    {
+    return ( sumOfSquaredDifferencesXY / N );
+    }
+  else
+    {
+    itkExceptionMacro( "Unrecognized similarity metric." );
+    }
+}
+
+template <class TInputImage, class TOutputImage>
+typename WeightedVotingFusionImageFilter<TInputImage, TOutputImage>::VectorType
+WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
+::NonNegativeLeastSquares( const MatrixType A, const VectorType y, const RealType tolerance )
+{
+  // Algorithm based on
+  // Lawson, Charles L.; Hanson, Richard J. (1995). Solving Least Squares Problems. SIAM.
+  // cf https://en.wikipedia.org/wiki/Non-negative_least_squares
+
+  SizeValueType m = A.rows();
+  SizeValueType n = A.cols();
+
+  // Initialization
+
+  VectorType P( n, 0 );
+  VectorType R( n, 1 );
+  VectorType x( n, 0 );
+  VectorType s( n, 0 );
+  VectorType w = A.transpose() * ( y - A * x );
+
+  RealType wMaxValue = w.max_value();
+  SizeValueType maxIndex = NumericTraits<SizeValueType>::max();
+  wMaxValue = NumericTraits<RealType>::NonpositiveMin();
+  for( SizeValueType i = 0; i < n; i++ )
+    {
+    if( R[i] == 1 && wMaxValue < w[i] )
+      {
+      maxIndex = i;
+      wMaxValue = w[i];
+      }
+    }
+
+  // Outer loop
+  while( R.sum() > 0 && wMaxValue > tolerance )
+    {
+    P[maxIndex] = 1;
+    R[maxIndex] = 0;
+
+    SizeValueType sizeP = P.sum();
+
+    MatrixType AP( m, sizeP, 0 );
+    SizeValueType jIndex = 0;
+    for( SizeValueType j = 0; j < n; j++ )
+      {
+      if( P[j] == 1 )
+        {
+        AP.set_column( jIndex++, A.get_column( j ) );
+        }
+      }
+
+    VectorType sP = vnl_svd<RealType>( AP ).pinverse() * y;
+
+    SizeValueType iIndex = 0;
+
+    for( SizeValueType i = 0; i < n; i++ )
+      {
+      if( R[i] != 0 )
+        {
+        s[i] = 0;
+        }
+      else
+        {
+        s[i] = sP[iIndex++];
+        }
+      }
+
+    // Inner loop
+    while( sP.min_value() <= tolerance && sizeP > 0 )
+      {
+      RealType alpha = NumericTraits<RealType>::max();
+
+      for( SizeValueType i = 0; i < n; i++ )
+        {
+        if( P[i] == 1 && s[i] <= tolerance )
+          {
+          RealType value = x[i] / ( x[i] - s[i] );
+          if( value < alpha )
+            {
+            alpha = value;
+            }
+          }
+        }
+
+      x += alpha * ( s - x );
+
+      for( SizeValueType i = 0; i < n; i++ )
+        {
+        if( P[i] == 1 && std::fabs( x[i] ) < tolerance )
+          {
+          P[i] = 0;
+          R[i] = 1;
+          }
+        }
+
+      sizeP = P.sum();
+      if( sizeP == 0 )
+        {
+        break;
+        }
+
+      AP.set_size( m, sizeP );
+      jIndex = 0;
+      for( SizeValueType j = 0; j < n; j++ )
+        {
+        if( P[j] == 1 )
+          {
+          AP.set_column( jIndex++, A.get_column( j ) );
+          }
+        }
+
+      sP = vnl_svd<RealType>( AP ).pinverse() * y;
+
+      iIndex = 0;
+      for( SizeValueType i = 0; i < n; i++ )
+        {
+        if( R[i] != 0 )
+          {
+          s[i] = 0;
+          }
+        else
+          {
+          s[i] = sP[iIndex++];
+          }
+        }
+      }
+
+    x = s;
+    w = A.transpose() * ( y - A * x );
+
+    maxIndex = NumericTraits<SizeValueType>::max();
+    wMaxValue = NumericTraits<RealType>::NonpositiveMin();
+    for( SizeValueType i = 0; i < n; i++ )
+      {
+      if( R[i] == 1 && wMaxValue < w[i] )
+        {
+        maxIndex = i;
+        wMaxValue = w[i];
+        }
+      }
+    }
+
+  return x;
 }
 
 template <class TInputImage, class TOutputImage>
@@ -689,11 +1004,19 @@ WeightedVotingFusionImageFilter<TInputImage, TOutputImage>
 
   os << "Number of atlases = " << this->m_NumberOfAtlases << std::endl;
   os << "Number of atlas segmentations = " << this->m_NumberOfAtlasSegmentations << std::endl;
-  os << "Number of modalities = " << this->m_NumberOfModalities << std::endl;
+  os << "Number of atlas modalities = " << this->m_NumberOfAtlasModalities << std::endl;
   os << "Alpha = " << this->m_Alpha << std::endl;
   os << "Beta = " << this->m_Beta << std::endl;
   os << "Search neighborhood radius = " << this->m_SearchNeighborhoodRadius << std::endl;
   os << "Patch neighborhood radius = " << this->m_PatchNeighborhoodRadius << std::endl;
+  if( this->m_SimilarityMetric == PEARSON_CORRELATION )
+    {
+    os << "Using Pearson correlation to measure the patch similarity." << std::endl;
+    }
+  else if( this->m_SimilarityMetric == MEAN_SQUARES )
+    {
+    os << "Using mean squares to measure the patch similarity." << std::endl;
+    }
 
   os << "Label set: ";
   typename LabelSetType::const_iterator labelIt;
